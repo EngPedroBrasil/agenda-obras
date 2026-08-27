@@ -64,7 +64,18 @@ function makeHandler(store) {
   };
 }
 
+function resolveStore() {
+  if (process.env.BLOBS_SITE_ID && process.env.BLOBS_TOKEN) {
+    return getStore({
+      name: STORE_NAME,
+      siteID: process.env.BLOBS_SITE_ID,
+      token: process.env.BLOBS_TOKEN
+    });
+  }
+  return getStore(STORE_NAME);
+}
+
 exports.handler = async function (event, context) {
-  return makeHandler(getStore(STORE_NAME))(event, context);
+  return makeHandler(resolveStore())(event, context);
 };
 exports.makeHandler = makeHandler;
