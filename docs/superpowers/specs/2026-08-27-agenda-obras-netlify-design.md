@@ -114,3 +114,9 @@ site publicado nem exposto ao público.
 
 - Autenticação simples (uma senha compartilhada) se a exposição pública incomodar.
 - Atualização real-time via WebSocket/Supabase, se o polling de 25s parecer lento na prática.
+
+## URL de produção
+
+https://agenda-obras.netlify.app
+
+Publicado em 2026-08-27.
