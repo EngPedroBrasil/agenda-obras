@@ -513,9 +513,7 @@
   <header class="topbar">
     <div class="brand-block">
       <h1 class="brand"><span class="brand-mark">&#127959;</span>Agenda de Obras</h1>
-      <p class="tagline">Cada um marca sua presen&ccedil;a na planilha Excel &mdash; este calend&aacute;rio &eacute; s&oacute; a visualiza&ccedil;&atilde;o, atualizada periodicamente a partir dela.</p>
-      <a class="readonly-banner show" id="editExcelLink" href="https://blendiep.sharepoint.com/sites/PCP/Documentos%20Compartilhados/agenda_de_obras.xlsx" target="_blank" rel="noopener">Abrir planilha para marcar presen&ccedil;a &#8599;</a>
-      <p class="sync-note" id="syncNote"></p>
+      <p class="tagline">Clique num dia pra marcar sua presen&ccedil;a numa obra &mdash; todo mundo v&ecirc; a mesma agenda, atualizada ao vivo.</p>
     </div>
     <div class="nav-cluster">
       <div class="seg" id="viewSeg">
@@ -566,7 +564,6 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script type="application/json" id="cal-data">__CALENDAR_DATA__</script>
 <script>
 (function () {
   "use strict";
@@ -597,11 +594,40 @@
 
   /* ---------------- data ---------------- */
   var entries = [];
-  try {
-    var raw = document.getElementById("cal-data").textContent;
-    entries = raw ? JSON.parse(raw) : [];
-  } catch (e) { entries = []; }
-  if (!Array.isArray(entries)) entries = [];
+
+  /* ---------------- API ---------------- */
+  function fetchEntries() {
+    return fetch("/api/entries").then(function (res) {
+      if (!res.ok) throw new Error("fetch failed");
+      return res.json();
+    }).then(function (data) {
+      return Array.isArray(data.entries) ? data.entries : [];
+    });
+  }
+  function submitAdd(date, person, obra) {
+    return fetch("/api/entries", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: "add", date: date, person: person, obra: obra })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("add failed");
+      return res.json();
+    }).then(function (data) {
+      entries = Array.isArray(data.entries) ? data.entries : entries;
+    });
+  }
+  function submitRemove(id) {
+    return fetch("/api/entries", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ op: "remove", id: id })
+    }).then(function (res) {
+      if (!res.ok) throw new Error("remove failed");
+      return res.json();
+    }).then(function (data) {
+      entries = Array.isArray(data.entries) ? data.entries : entries;
+    });
+  }
 
   /* ---------------- date helpers ---------------- */
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -684,7 +710,6 @@
   var selectedPeople = {};
   var selectedObras = {};
   var modalDateKey = null;
-  var EXCEL_URL = "https://blendiep.sharepoint.com/sites/PCP/Documentos%20Compartilhados/agenda_de_obras.xlsx";
 
   function anyFilterActive() {
     return Object.keys(selectedPeople).length > 0 || Object.keys(selectedObras).length > 0;
@@ -747,6 +772,7 @@
     return '<div class="entry-chip" style="--chip-color:' + obra.color + '">' +
       '<img src="' + obra.icon + '" alt="">' +
       '<span class="chip-text"><span class="chip-name" title="' + h(person.name) + '">' + h(person.name) + '</span><span class="chip-obra" title="' + h(obra.name) + '">' + h(obra.name) + '</span></span>' +
+      '<button class="rm" data-action="remove-entry" data-id="' + en.id + '" title="Remover" aria-label="Remover">&times;</button>' +
       "</div>";
   }
 
@@ -844,6 +870,16 @@
             "</div></div>";
         }).join("");
 
+    var personOptions = TEAM.map(function (p) {
+      return '<label class="opt-row"><input type="radio" name="modal-person" value="' + p.id + '" style="accent-color:var(--accent)">' +
+        '<span class="avatar">' + initials(p.name) + '</span><span class="opt-label">' + h(p.name) + '<div class="opt-sub">' + h(p.role) + '</div></span></label>';
+    }).join("");
+
+    var obraOptions = OBRAS.map(function (o) {
+      return '<label class="opt-row"><input type="checkbox" name="modal-obra" value="' + o.id + '" style="accent-color:var(--accent)">' +
+        '<img src="' + o.icon + '" alt=""><span class="opt-label">' + h(o.name) + '<div class="opt-sub">' + h(o.city) + '</div></span></label>';
+    }).join("");
+
     var holHTML = hol.length ? holidayPillsHTML(hol) + '<p class="modal-sub" style="margin-top:6px">' + hol.map(function (x) { return h(x.label); }).join(" · ") + "</p>" : "";
 
     document.getElementById("modal").innerHTML =
@@ -851,9 +887,48 @@
       holHTML +
       '<div class="modal-section-title">Marcados neste dia</div>' +
       '<div class="current-list">' + currentHTML + "</div>" +
-      '<a class="btn btn-primary" style="text-decoration:none;" href="' + h(EXCEL_URL) + '" target="_blank" rel="noopener">Marcar / editar na planilha &#8599;</a>';
+      '<div class="modal-section-title">Adicionar presença</div>' +
+      '<form id="addForm">' +
+      '<div class="radio-list">' + personOptions + '</div>' +
+      '<div class="modal-section-title">Obra(s)</div>' +
+      '<div class="check-list">' + obraOptions + '</div>' +
+      '<button type="submit" class="btn btn-primary" id="addBtn" disabled>Adicionar</button>' +
+      "</form>";
 
     overlay.classList.add("show");
+
+    var form = document.getElementById("addForm");
+    var addBtn = document.getElementById("addBtn");
+    function refreshBtn() {
+      var person = form.querySelector('input[name="modal-person"]:checked');
+      var obras = form.querySelectorAll('input[name="modal-obra"]:checked');
+      addBtn.disabled = !(person && obras.length);
+    }
+    form.addEventListener("change", refreshBtn);
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var person = form.querySelector('input[name="modal-person"]:checked');
+      var obras = form.querySelectorAll('input[name="modal-obra"]:checked');
+      if (!person || !obras.length) return;
+      addBtn.disabled = true;
+      addBtn.textContent = "Adicionando…";
+      var dateKeyToAdd = modalDateKey;
+      var personId = person.value;
+      var obraIds = Array.prototype.map.call(obras, function (cb) { return cb.value; });
+      var chain = Promise.resolve();
+      obraIds.forEach(function (obraId) {
+        chain = chain.then(function () { return submitAdd(dateKeyToAdd, personId, obraId); });
+      });
+      chain.then(function () {
+        renderModal();
+        renderCalendar();
+        showToast("Presença adicionada.");
+      }).catch(function () {
+        showToast("Não foi possível salvar agora. Tente de novo.");
+        addBtn.disabled = false;
+        addBtn.textContent = "Adicionar";
+      });
+    });
   }
 
   function render() {
@@ -873,30 +948,15 @@
     toastTimer = setTimeout(function () { t.classList.remove("show"); }, 3200);
   }
 
-  /* ---------------- live refresh (polls this same published page) ---------------- */
-  var lastSyncSeen = document.getElementById("syncNote").textContent;
+  /* ---------------- live refresh ---------------- */
   function pollForUpdates() {
-    fetch(location.href, { cache: "no-store" }).then(function (res) {
-      if (!res.ok) return;
-      return res.text();
-    }).then(function (html) {
-      if (!html) return;
-      var dataMatch = html.match(/<script type="application\/json" id="cal-data">([\s\S]*?)<\/script>/);
-      var syncMatch = html.match(/var LAST_SYNC = "([^"]*)";/);
-      if (!dataMatch || !syncMatch) return;
-      var newSyncNote = syncMatch[1] ? "Atualizado a partir da planilha em " + syncMatch[1] : "";
-      if (newSyncNote === lastSyncSeen) return; // nothing new published since we loaded
-      var newEntries;
-      try { newEntries = JSON.parse(dataMatch[1]); } catch (e) { return; }
-      if (!Array.isArray(newEntries)) return;
+    fetchEntries().then(function (newEntries) {
+      if (JSON.stringify(newEntries) === JSON.stringify(entries)) return;
       entries = newEntries;
-      lastSyncSeen = newSyncNote;
-      document.getElementById("syncNote").textContent = newSyncNote;
       render();
-      showToast("Calendário atualizado com os dados mais recentes.");
     }).catch(function () { /* silent — tenta de novo no próximo ciclo */ });
   }
-  setInterval(pollForUpdates, 60000);
+  setInterval(pollForUpdates, 25000);
 
   /* ---------------- events ---------------- */
   document.addEventListener("click", function (ev) {
@@ -933,6 +993,15 @@
     } else if (action === "close-modal") {
       modalDateKey = null;
       renderModal();
+    } else if (action === "remove-entry") {
+      var id = el.getAttribute("data-id");
+      submitRemove(id).then(function () {
+        renderModal();
+        renderCalendar();
+        showToast("Presença removida.");
+      }).catch(function () {
+        showToast("Não foi possível remover agora. Tente de novo.");
+      });
     }
   });
   document.addEventListener("keydown", function (ev) {
@@ -942,9 +1011,11 @@
   /* ---------------- init ---------------- */
   renderLegend();
   render();
-  var LAST_SYNC = "__LAST_SYNC__";
-  if (LAST_SYNC && LAST_SYNC.indexOf("{{") !== 0) {
-    document.getElementById("syncNote").textContent = "Atualizado a partir da planilha em " + LAST_SYNC;
-  }
+  fetchEntries().then(function (loaded) {
+    entries = loaded;
+    render();
+  }).catch(function () {
+    showToast("Não foi possível carregar os dados agora.");
+  });
 })();
 </script>
