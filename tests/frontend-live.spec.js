@@ -21,7 +21,7 @@ test("full add/remove cycle persists through the real API", async ({ page }) => 
   await page.waitForTimeout(200);
   await expect(page.locator(".current-list")).toContainText("Gustavo");
 
-  const rmButton = page.locator('.rm[data-id]').first();
+  const rmButton = page.locator('#modal .rm[data-id]').first();
   const idToRemove = await rmButton.getAttribute("data-id");
   await rmButton.click();
   await page.waitForTimeout(500);
