@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { validateEntry, addEntry, removeEntry, PEOPLE_IDS, OBRA_IDS } = require("./entries-logic");
+const { validateEntry, addEntry, removeEntry, PEOPLE_IDS, OBRA_IDS } = require("../../netlify/functions/lib/entries-logic");
 
 test("validateEntry accepts a valid entry", function () {
   const result = validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada" });

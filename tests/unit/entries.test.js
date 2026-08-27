@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { makeHandler } = require("./entries");
+const { makeHandler } = require("../../netlify/functions/entries");
 
 function makeFakeStore(initial) {
   let data = initial;
