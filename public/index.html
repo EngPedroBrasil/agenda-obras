@@ -502,6 +502,37 @@
   }
   .current-list { display: flex; flex-direction: column; gap: 6px; }
   .current-empty { font-size: 13px; color: var(--ink-faint); font-style: italic; }
+  .wa-textarea {
+    width: 100%;
+    min-height: 260px;
+    resize: vertical;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 12px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+  }
+  .wa-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .wa-actions .btn {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--ink);
+    padding: 9px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .wa-actions .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .wa-actions .btn:hover { filter: brightness(0.96); }
   .person-group { font-size: 13px; }
   .person-group .pg-name { font-weight: 800; margin-bottom: 4px; }
   .pg-obras { display: flex; flex-direction: column; gap: 5px; }
@@ -560,6 +591,7 @@
         <button data-action="next" aria-label="Pr&oacute;ximo">&#8250;</button>
       </div>
       <span class="period-label" id="periodLabel"></span>
+      <button class="today-btn" id="waBtn" data-action="open-wa-modal" style="display:none;">Gerar mensagem</button>
       <button class="theme-toggle" id="themeToggle" data-action="toggle-theme" aria-label="Alternar tema claro/escuro"></button>
     </div>
   </header>
@@ -596,6 +628,9 @@
 
 <div class="overlay" id="overlay">
   <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+</div>
+<div class="overlay" id="waOverlay">
+  <div class="modal" id="waModal" role="dialog" aria-modal="true"></div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -882,6 +917,7 @@
     document.getElementById("viewSeg").querySelectorAll("button").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-view") === view);
     });
+    document.getElementById("waBtn").style.display = view === "week" ? "" : "none";
   }
 
   function renderModal() {
@@ -1022,11 +1058,85 @@
     applyTheme();
   }
 
+  /* ---------------- weekly whatsapp message ---------------- */
+  var WEEKDAY_ABBR = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  var waModalOpen = false;
+
+  function weekRangeLabel() {
+    var start = startOfWeek(cursor);
+    var end = addDays(start, 6);
+    function fmt(d) { return pad(d.getDate()) + "/" + pad(d.getMonth() + 1); }
+    if (start.getFullYear() === end.getFullYear()) {
+      return fmt(start) + " a " + fmt(end) + "/" + end.getFullYear();
+    }
+    return fmt(start) + "/" + start.getFullYear() + " a " + fmt(end) + "/" + end.getFullYear();
+  }
+
+  function buildWeeklyWhatsAppMessage() {
+    var start = startOfWeek(cursor);
+    var sectorOrder = [];
+    var sectors = {};
+    TEAM.forEach(function (p) {
+      if (!sectors[p.role]) { sectors[p.role] = { peopleOrder: [], people: {} }; sectorOrder.push(p.role); }
+    });
+    for (var i = 0; i < 7; i++) {
+      var d = addDays(start, i);
+      var dayLabel = WEEKDAY_ABBR[d.getDay()] + " " + pad(d.getDate());
+      entriesForDate(dateKey(d)).forEach(function (en) {
+        var person = personById[en.person], obra = obraById[en.obra];
+        if (!person || !obra) return;
+        var sector = sectors[person.role];
+        if (!sector.people[person.id]) {
+          sector.people[person.id] = { name: person.name, dayOrder: [], days: {} };
+          sector.peopleOrder.push(person.id);
+        }
+        var pdata = sector.people[person.id];
+        if (!pdata.days[dayLabel]) { pdata.days[dayLabel] = []; pdata.dayOrder.push(dayLabel); }
+        pdata.days[dayLabel].push(obra.shortName || obra.name);
+      });
+    }
+    var lines = ["📅 *Agenda de Obras — semana de " + weekRangeLabel() + "*", ""];
+    var anyEntry = false;
+    sectorOrder.forEach(function (role) {
+      var sector = sectors[role];
+      if (!sector.peopleOrder.length) return;
+      anyEntry = true;
+      lines.push("*" + role + "*");
+      sector.peopleOrder.forEach(function (pid) {
+        var pdata = sector.people[pid];
+        var parts = pdata.dayOrder.map(function (dayLabel) {
+          return dayLabel + " " + pdata.days[dayLabel].join(" e ");
+        });
+        lines.push(pdata.name + ": " + parts.join(", "));
+      });
+      lines.push("");
+    });
+    if (!anyEntry) lines.push("Ninguém marcado nessa semana.");
+    return lines.join("\n").trim();
+  }
+
+  function renderWaModal() {
+    var overlay = document.getElementById("waOverlay");
+    if (!waModalOpen) { overlay.classList.remove("show"); return; }
+    var message = buildWeeklyWhatsAppMessage();
+    var waLink = "https://wa.me/?text=" + encodeURIComponent(message);
+    document.getElementById("waModal").innerHTML =
+      '<div class="modal-head"><div><h2>Mensagem da semana</h2></div><button class="close-x" data-action="close-wa-modal" aria-label="Fechar">&times;</button></div>' +
+      '<p class="modal-sub">Confira o texto, edite se quiser, e copie ou abra direto no WhatsApp.</p>' +
+      '<textarea class="wa-textarea" id="waText">' + h(message) + '</textarea>' +
+      '<div class="wa-actions">' +
+      '<button class="btn" data-action="copy-wa-message">Copiar</button>' +
+      '<a class="btn primary" href="' + waLink + '" target="_blank" rel="noopener">Abrir no WhatsApp</a>' +
+      '</div>';
+    overlay.classList.add("show");
+  }
+
   /* ---------------- events ---------------- */
   document.addEventListener("click", function (ev) {
     var el = ev.target.closest("[data-action]");
     if (!el) {
       if (ev.target.id === "overlay") { modalDateKey = null; renderModal(); }
+      if (ev.target.id === "waOverlay") { waModalOpen = false; renderWaModal(); }
       return;
     }
     var action = el.getAttribute("data-action");
@@ -1068,10 +1178,30 @@
       }).catch(function () {
         showToast("Não foi possível remover agora. Tente de novo.");
       });
+    } else if (action === "open-wa-modal") {
+      waModalOpen = true;
+      renderWaModal();
+    } else if (action === "close-wa-modal") {
+      waModalOpen = false;
+      renderWaModal();
+    } else if (action === "copy-wa-message") {
+      var textarea = document.getElementById("waText");
+      var text = textarea ? textarea.value : "";
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () {
+          showToast("Mensagem copiada.");
+        }).catch(function () {
+          showToast("Não foi possível copiar. Selecione o texto manualmente.");
+        });
+      } else {
+        textarea.select();
+        showToast("Selecione e copie o texto manualmente.");
+      }
     }
   });
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && modalDateKey) { modalDateKey = null; renderModal(); }
+    if (ev.key === "Escape" && waModalOpen) { waModalOpen = false; renderWaModal(); }
   });
 
   /* ---------------- init ---------------- */
