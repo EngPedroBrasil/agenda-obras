@@ -1,20 +1,20 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <title>Agenda de Obras</title>
 <style>
   :root {
-    --bg: #faf7f2;
+    --bg: #f7f8f4;
     --surface: #ffffff;
-    --surface-2: #f3ede2;
-    --surface-3: #ece4d6;
-    --border: #e4ddce;
-    --ink: #2b2a26;
-    --ink-soft: #6f6a5f;
-    --ink-faint: #9b9584;
-    --accent: #b3552f;
-    --accent-ink: #fffaf5;
-    --accent-soft: #f3ded1;
+    --surface-2: #eef1e9;
+    --surface-3: #e3e7db;
+    --border: #d9ddd0;
+    --ink: #3c3c3b;
+    --ink-soft: #6b6b67;
+    --ink-faint: #97968f;
+    --accent: #51ae32;
+    --accent-ink: #ffffff;
+    --accent-soft: #e3f0da;
     --holiday-nat: #a0442e;
     --holiday-nat-bg: #f6e2dc;
     --holiday-cur: #2e6f8e;
@@ -27,44 +27,46 @@
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
-      --bg: #201d19;
-      --surface: #29251f;
-      --surface-2: #322d25;
-      --surface-3: #3b342a;
-      --border: #463f34;
-      --ink: #f4efe6;
-      --ink-soft: #c2b9a8;
-      --ink-faint: #8d8574;
-      --accent: #e3925f;
-      --accent-ink: #241a10;
-      --accent-soft: #4a3324;
+      --bg: #1b1d1a;
+      --surface: #242621;
+      --surface-2: #2c2f28;
+      --surface-3: #363930;
+      --border: #454940;
+      --ink: #f1f2ec;
+      --ink-soft: #b9bcb0;
+      --ink-faint: #83867b;
+      --accent: #8dc860;
+      --accent-ink: #16210c;
+      --accent-soft: #2b3a1f;
       --holiday-nat: #e08a70;
       --holiday-nat-bg: #4a2c24;
       --holiday-cur: #7cbcdc;
       --holiday-cur-bg: #24404d;
       --holiday-fac: #cdbd8e;
       --holiday-fac-bg: #423c28;
+      --danger: #e08a70;
       --shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.55);
     }
   }
   :root[data-theme="dark"] {
-    --bg: #201d19;
-    --surface: #29251f;
-    --surface-2: #322d25;
-    --surface-3: #3b342a;
-    --border: #463f34;
-    --ink: #f4efe6;
-    --ink-soft: #c2b9a8;
-    --ink-faint: #8d8574;
-    --accent: #e3925f;
-    --accent-ink: #241a10;
-    --accent-soft: #4a3324;
+    --bg: #1b1d1a;
+    --surface: #242621;
+    --surface-2: #2c2f28;
+    --surface-3: #363930;
+    --border: #454940;
+    --ink: #f1f2ec;
+    --ink-soft: #b9bcb0;
+    --ink-faint: #83867b;
+    --accent: #8dc860;
+    --accent-ink: #16210c;
+    --accent-soft: #2b3a1f;
     --holiday-nat: #e08a70;
     --holiday-nat-bg: #4a2c24;
     --holiday-cur: #7cbcdc;
     --holiday-cur-bg: #24404d;
     --holiday-fac: #cdbd8e;
     --holiday-fac-bg: #423c28;
+    --danger: #e08a70;
     --shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.55);
   }
 
@@ -73,13 +75,14 @@
   body {
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Inter', system-ui, sans-serif;
+    font-family: 'Mulish', system-ui, sans-serif;
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
   }
   h1, h2, h3, .brand, .btn, .pill, .chip-name, .day-num {
-    font-family: 'Manrope', 'Inter', system-ui, sans-serif;
+    font-family: 'Mulish', system-ui, sans-serif;
+    font-weight: 800;
   }
   a { color: inherit; }
   button { font: inherit; color: inherit; }
@@ -114,11 +117,26 @@
     justify-content: center;
     width: 34px; height: 34px;
     border-radius: 10px;
-    background: var(--accent);
-    color: var(--accent-ink);
-    font-size: 18px;
+    background: #ffffff;
+    border: 1px solid var(--border);
+    padding: 5px;
     flex: none;
   }
+  .brand-mark img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .theme-toggle {
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink);
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 15px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+  }
+  .theme-toggle:hover { background: var(--surface-2); }
   .tagline {
     margin: 4px 0 0;
     color: var(--ink-soft);
@@ -512,7 +530,7 @@
 <div class="wrap">
   <header class="topbar">
     <div class="brand-block">
-      <h1 class="brand"><span class="brand-mark">&#127959;</span>Agenda de Obras</h1>
+      <h1 class="brand"><span class="brand-mark"><img src="assets/blendi-symbol.png" alt=""></span>Agenda de Obras</h1>
       <p class="tagline">Clique num dia pra marcar sua presen&ccedil;a numa obra &mdash; todo mundo v&ecirc; a mesma agenda, atualizada ao vivo.</p>
     </div>
     <div class="nav-cluster">
@@ -526,6 +544,7 @@
         <button data-action="next" aria-label="Pr&oacute;ximo">&#8250;</button>
       </div>
       <span class="period-label" id="periodLabel"></span>
+      <button class="theme-toggle" id="themeToggle" data-action="toggle-theme" aria-label="Alternar tema claro/escuro"></button>
     </div>
   </header>
 
@@ -958,6 +977,32 @@
   }
   setInterval(pollForUpdates, 25000);
 
+  /* ---------------- theme ---------------- */
+  var THEME_KEY = "agenda-obras-theme";
+  function systemPrefersDark() {
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function effectiveTheme() {
+    var saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") return saved;
+    return systemPrefersDark() ? "dark" : "light";
+  }
+  function applyTheme() {
+    var saved = localStorage.getItem(THEME_KEY);
+    if (saved === "light" || saved === "dark") {
+      document.documentElement.setAttribute("data-theme", saved);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+    var btn = document.getElementById("themeToggle");
+    if (btn) btn.textContent = effectiveTheme() === "dark" ? "☀" : "☽";
+  }
+  function toggleTheme() {
+    var next = effectiveTheme() === "dark" ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, next);
+    applyTheme();
+  }
+
   /* ---------------- events ---------------- */
   document.addEventListener("click", function (ev) {
     var el = ev.target.closest("[data-action]");
@@ -973,6 +1018,8 @@
     } else if (action === "today") {
       cursor = new Date(); cursor.setHours(0, 0, 0, 0);
       renderCalendar();
+    } else if (action === "toggle-theme") {
+      toggleTheme();
     } else if (action === "set-view") {
       view = el.getAttribute("data-view");
       renderCalendar();
@@ -1009,6 +1056,7 @@
   });
 
   /* ---------------- init ---------------- */
+  applyTheme();
   renderLegend();
   render();
   fetchEntries().then(function (loaded) {
