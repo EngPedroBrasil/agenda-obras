@@ -78,7 +78,7 @@
   body {
     background: var(--bg);
     color: var(--ink);
-    font-family: 'Mulish', system-ui, sans-serif;
+    font-family: 'Mulish', system-ui, "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif;
     font-variant-numeric: tabular-nums;
     -webkit-font-smoothing: antialiased;
     min-height: 100vh;
@@ -305,9 +305,9 @@
   .week-scroll { overflow-x: auto; padding-bottom: 4px; }
   .week-grid {
     display: grid;
-    grid-template-columns: repeat(7, minmax(172px, 1fr));
+    grid-template-columns: repeat(7, minmax(155px, 1fr));
     gap: 10px;
-    min-width: 870px;
+    min-width: 790px;
   }
   .day-card {
     background: var(--surface);
@@ -1059,7 +1059,7 @@
   }
 
   /* ---------------- weekly whatsapp message ---------------- */
-  var WEEKDAY_ABBR = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+  var WEEKDAY_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
   var waModalOpen = false;
 
   function weekRangeLabel() {
@@ -1081,7 +1081,7 @@
     });
     for (var i = 0; i < 7; i++) {
       var d = addDays(start, i);
-      var dayLabel = WEEKDAY_ABBR[d.getDay()] + " " + pad(d.getDate());
+      var dayLabel = WEEKDAY_FULL[d.getDay()] + " (" + pad(d.getDate()) + ")";
       entriesForDate(dateKey(d)).forEach(function (en) {
         var person = personById[en.person], obra = obraById[en.obra];
         if (!person || !obra) return;
@@ -1104,10 +1104,10 @@
       lines.push("*" + role + "*");
       sector.peopleOrder.forEach(function (pid) {
         var pdata = sector.people[pid];
-        var parts = pdata.dayOrder.map(function (dayLabel) {
-          return dayLabel + " " + pdata.days[dayLabel].join(" e ");
+        lines.push(pdata.name);
+        pdata.dayOrder.forEach(function (dayLabel) {
+          lines.push(dayLabel + " " + pdata.days[dayLabel].join(" e "));
         });
-        lines.push(pdata.name + ": " + parts.join(", "));
       });
       lines.push("");
     });
