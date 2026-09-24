@@ -66,3 +66,71 @@ test("unsupported method returns 405", async function () {
   const res = await handler({ httpMethod: "DELETE" });
   assert.equal(res.statusCode, 405);
 });
+
+// --- comments ---------------------------------------------------------
+
+test("POST add stores the trimmed comment on the new entry", async function () {
+  const handler = makeHandler(makeFakeStore([]));
+  const res = await handler({
+    httpMethod: "POST",
+    body: JSON.stringify({ op: "add", date: "2026-08-27", person: "pedro", obra: "almada", comment: "  concretagem da laje  " })
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).entries[0].comment, "concretagem da laje");
+});
+
+test("POST add with a blank comment stores no comment at all", async function () {
+  const handler = makeHandler(makeFakeStore([]));
+  const res = await handler({
+    httpMethod: "POST",
+    body: JSON.stringify({ op: "add", date: "2026-08-27", person: "pedro", obra: "almada", comment: "   " })
+  });
+  assert.equal(res.statusCode, 200);
+  assert.equal("comment" in JSON.parse(res.body).entries[0], false);
+});
+
+test("POST add rejects a comment over the limit", async function () {
+  const handler = makeHandler(makeFakeStore([]));
+  const res = await handler({
+    httpMethod: "POST",
+    body: JSON.stringify({ op: "add", date: "2026-08-27", person: "pedro", obra: "almada", comment: "a".repeat(141) })
+  });
+  assert.equal(res.statusCode, 400);
+});
+
+test("POST update replaces the comment of an existing entry", async function () {
+  const seeded = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "antigo" }];
+  const handler = makeHandler(makeFakeStore(seeded));
+  const res = await handler({ httpMethod: "POST", body: JSON.stringify({ op: "update", id: "a1", comment: "novo" }) });
+  assert.equal(res.statusCode, 200);
+  assert.equal(JSON.parse(res.body).entries[0].comment, "novo");
+});
+
+test("POST update with an empty comment clears it", async function () {
+  const seeded = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "antigo" }];
+  const handler = makeHandler(makeFakeStore(seeded));
+  const res = await handler({ httpMethod: "POST", body: JSON.stringify({ op: "update", id: "a1", comment: "" }) });
+  assert.equal(res.statusCode, 200);
+  assert.equal("comment" in JSON.parse(res.body).entries[0], false);
+});
+
+test("POST update for an unknown id returns 404", async function () {
+  const handler = makeHandler(makeFakeStore([]));
+  const res = await handler({ httpMethod: "POST", body: JSON.stringify({ op: "update", id: "nao-existe", comment: "x" }) });
+  assert.equal(res.statusCode, 404);
+});
+
+test("POST update rejects an over-long comment and keeps the stored one", async function () {
+  const seeded = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "original" }];
+  const handler = makeHandler(makeFakeStore(seeded));
+  const res = await handler({ httpMethod: "POST", body: JSON.stringify({ op: "update", id: "a1", comment: "a".repeat(141) }) });
+  assert.equal(res.statusCode, 400);
+  const after = await handler({ httpMethod: "GET" });
+  assert.equal(JSON.parse(after.body).entries[0].comment, "original");
+});
+
+test("POST update without an id returns 400", async function () {
+  const handler = makeHandler(makeFakeStore([]));
+  const res = await handler({ httpMethod: "POST", body: JSON.stringify({ op: "update", comment: "x" }) });
+  assert.equal(res.statusCode, 400);
+});

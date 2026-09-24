@@ -1,7 +1,10 @@
 "use strict";
 
 const { getStore } = require("@netlify/blobs");
-const { validateEntry, addEntry, removeEntry } = require("./lib/entries-logic");
+const {
+  validateEntry, validateComment, normalizeComment,
+  addEntry, removeEntry, updateEntryComment
+} = require("./lib/entries-logic");
 
 const STORE_NAME = "agenda-obras";
 const BLOB_KEY = "entries";
@@ -52,12 +55,30 @@ function makeHandler(store) {
           obra: payload.obra,
           createdAt: new Date().toISOString()
         };
+        const comment = normalizeComment(payload.comment);
+        if (comment) entryWithId.comment = comment;
         const updated = addEntry(current, entryWithId);
         await store.setJSON(BLOB_KEY, updated);
         return jsonResponse(200, { entries: updated });
       }
 
-      return jsonResponse(400, { error: "op inválida (esperado 'add' ou 'remove')" });
+      if (payload.op === "update") {
+        if (typeof payload.id !== "string" || !payload.id) {
+          return jsonResponse(400, { error: "id obrigatório para atualizar" });
+        }
+        const commentCheck = validateComment(payload.comment);
+        if (!commentCheck.ok) {
+          return jsonResponse(400, { error: commentCheck.error });
+        }
+        const updated = updateEntryComment(current, payload.id, payload.comment);
+        if (!updated) {
+          return jsonResponse(404, { error: "marcação não encontrada" });
+        }
+        await store.setJSON(BLOB_KEY, updated);
+        return jsonResponse(200, { entries: updated });
+      }
+
+      return jsonResponse(400, { error: "op inválida (esperado 'add', 'remove' ou 'update')" });
     }
 
     return jsonResponse(405, { error: "método não suportado" });

@@ -1,6 +1,65 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { validateEntry, addEntry, removeEntry, PEOPLE_IDS, OBRA_IDS } = require("../../netlify/functions/lib/entries-logic");
+const { validateEntry, validateComment, addEntry, removeEntry, updateEntryComment, PEOPLE_IDS, OBRA_IDS } = require("../../netlify/functions/lib/entries-logic");
+
+// --- comments ---------------------------------------------------------
+
+test("validateEntry accepts a comment of exactly 140 characters", function () {
+  const result = validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada", comment: "a".repeat(140) });
+  assert.deepEqual(result, { ok: true });
+});
+
+test("validateEntry rejects a comment of 141 characters", function () {
+  const result = validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada", comment: "a".repeat(141) });
+  assert.equal(result.ok, false);
+});
+
+test("validateEntry rejects a comment that is not a string", function () {
+  const result = validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada", comment: 123 });
+  assert.equal(result.ok, false);
+});
+
+test("validateEntry accepts an empty comment, since the field is optional", function () {
+  const result = validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada", comment: "" });
+  assert.deepEqual(result, { ok: true });
+});
+
+test("validateComment measures length after trimming surrounding spaces", function () {
+  assert.deepEqual(validateComment("  " + "a".repeat(140) + "  "), { ok: true });
+});
+
+test("updateEntryComment sets the comment on the matching entry only", function () {
+  const existing = [
+    { id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x" },
+    { id: "a2", date: "2026-08-27", person: "jean", obra: "montebello", createdAt: "y" }
+  ];
+  const result = updateEntryComment(existing, "a2", "vistoria");
+  assert.equal(result[0].comment, undefined);
+  assert.equal(result[1].comment, "vistoria");
+});
+
+test("updateEntryComment trims the comment before storing it", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x" }];
+  const result = updateEntryComment(existing, "a1", "  concretagem  ");
+  assert.equal(result[0].comment, "concretagem");
+});
+
+test("updateEntryComment with a blank comment removes the existing one", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "antigo" }];
+  const result = updateEntryComment(existing, "a1", "   ");
+  assert.equal("comment" in result[0], false);
+});
+
+test("updateEntryComment returns null for an unknown id so callers can report it", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x" }];
+  assert.equal(updateEntryComment(existing, "nao-existe", "texto"), null);
+});
+
+test("updateEntryComment does not mutate the array it was given", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x" }];
+  updateEntryComment(existing, "a1", "texto");
+  assert.equal(existing[0].comment, undefined);
+});
 
 test("validateEntry accepts a valid entry", function () {
   const result = validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada" });
