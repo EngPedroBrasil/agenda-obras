@@ -385,6 +385,9 @@
   }
   .entry-chip .rm:hover { color: var(--danger); }
   .entry-chip { flex-wrap: wrap; }
+  .obra-card .chip-name { white-space: normal; overflow: visible; }
+  .obra-card .chip-obra { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.35; }
+  .obra-card .chip-comment { display: inline; margin-left: 2px; }
   .entry-chip .chip-comment { flex: none; font-size: 12px; line-height: 1; margin-top: 1px; cursor: help; }
   .entry-chip .edit {
     border: none; background: none; color: var(--ink-faint);
@@ -614,6 +617,10 @@
         <button data-action="set-view" data-view="week">Semana</button>
         <button data-action="set-view" data-view="month">M&ecirc;s</button>
       </div>
+      <div class="seg" id="groupSeg" role="group" aria-label="Agrupar por" style="display:none;">
+        <button data-action="set-group" data-group="person" title="Um chip por pessoa">Por pessoa</button>
+        <button data-action="set-group" data-group="obra" title="Um card por obra, com os nomes de quem estará lá">Por obra</button>
+      </div>
       <div class="arrows">
         <button data-action="prev" aria-label="Anterior">&#8249;</button>
         <button data-action="today" aria-label="Hoje" style="width:auto;padding:0 10px;font-size:12px;font-weight:700;">Hoje</button>
@@ -663,6 +670,7 @@
 </div>
 <div class="toast" id="toast"></div>
 
+<script src="lib/grouping.js"></script>
 <script>
 (function () {
   "use strict";
@@ -825,6 +833,7 @@
   var selectedObras = {};
   var modalDateKey = null;
   var editingEntryId = null;
+  var groupBy = "person"; // "person" | "obra" (week view only)
 
   function anyFilterActive() {
     return Object.keys(selectedPeople).length > 0 || Object.keys(selectedObras).length > 0;
@@ -921,6 +930,28 @@
     }).join("") + "</div>";
   }
 
+  // "By obra" week view: one card per obra listing everyone who will be there that day.
+  function obraCardsHTML(dayEntries) {
+    var groups = Grouping.groupByObra(
+      dayEntries,
+      OBRAS.map(function (o) { return o.id; }),
+      TEAM.map(function (p) { return p.id; })
+    );
+    return groups.map(function (g) {
+      var obra = obraById[g.obra];
+      var names = g.people.map(function (p) {
+        var badge = p.comment
+          ? '<span class="chip-comment" title="' + h(p.comment) + '" aria-label="Comentário: ' + h(p.comment) + '">&#128172;</span>'
+          : "";
+        return h(personById[p.person].name) + badge;
+      }).join(", ");
+      return '<div class="entry-chip obra-card" style="--chip-color:' + obra.color + '">' +
+        '<img src="' + obra.icon + '" alt="">' +
+        '<span class="chip-text"><span class="chip-name" title="' + h(obra.name) + '">' + h(obra.shortName || obra.name) + '</span>' +
+        '<span class="chip-obra">' + names + '</span></span></div>';
+    }).join("");
+  }
+
   function renderWeek() {
     var start = startOfWeek(cursor);
     var today = new Date(); today.setHours(0, 0, 0, 0);
@@ -936,7 +967,7 @@
         '<div class="day-card' + (isToday ? " is-today" : "") + (isWeekend ? " is-weekend" : "") + '" data-action="open-day" data-date="' + key + '">' +
           '<div class="day-head"><span class="day-weekday">' + WEEKDAY_SHORT[i] + '</span><span class="day-num">' + d.getDate() + '</span></div>' +
           holidayPillsHTML(hol) +
-          '<div class="entry-list">' + dayEntries.map(function (en) { return entryChipHTML(en); }).join("") + '</div>' +
+          '<div class="entry-list">' + (groupBy === "obra" ? obraCardsHTML(dayEntries) : dayEntries.map(function (en) { return entryChipHTML(en); }).join("")) + '</div>' +
         "</div>"
       );
     }
@@ -981,6 +1012,11 @@
       b.classList.toggle("active", b.getAttribute("data-view") === view);
     });
     document.getElementById("waBtn").style.display = view === "week" ? "" : "none";
+    var groupSeg = document.getElementById("groupSeg");
+    groupSeg.style.display = view === "week" ? "" : "none";
+    groupSeg.querySelectorAll("button").forEach(function (b) {
+      b.classList.toggle("active", b.getAttribute("data-group") === groupBy);
+    });
   }
 
   function renderModal() {
@@ -1219,6 +1255,9 @@
       renderCalendar();
     } else if (action === "toggle-theme") {
       toggleTheme();
+    } else if (action === "set-group") {
+      groupBy = el.getAttribute("data-group");
+      renderCalendar();
     } else if (action === "set-view") {
       view = el.getAttribute("data-view");
       renderCalendar();
