@@ -709,14 +709,11 @@
   function addDays(d, n) { var r = new Date(d); r.setDate(r.getDate() + n); return r; }
   function sameDay(a, b) { return dateKey(a) === dateKey(b); }
   function startOfWeek(d) {
-    var day = d.getDay();
-    var diff = day === 0 ? -6 : 1 - day;
-    return addDays(d, diff);
+    return addDays(d, -d.getDay());
   }
   function startOfMonth(d) { return new Date(d.getFullYear(), d.getMonth(), 1); }
 
   var WEEKDAY_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
-  var WEEKDAY_MON_FIRST = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"];
   var MONTH_NAMES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"];
 
   /* ---------------- holidays ---------------- */
@@ -871,7 +868,7 @@
       var isWeekend = d.getDay() === 0 || d.getDay() === 6;
       cells.push(
         '<div class="day-card' + (isToday ? " is-today" : "") + (isWeekend ? " is-weekend" : "") + '" data-action="open-day" data-date="' + key + '">' +
-          '<div class="day-head"><span class="day-weekday">' + WEEKDAY_MON_FIRST[i] + '</span><span class="day-num">' + d.getDate() + '</span></div>' +
+          '<div class="day-head"><span class="day-weekday">' + WEEKDAY_SHORT[i] + '</span><span class="day-num">' + d.getDate() + '</span></div>' +
           holidayPillsHTML(hol) +
           '<div class="entry-list">' + dayEntries.map(function (en) { return entryChipHTML(en); }).join("") + '</div>' +
         "</div>"
@@ -907,7 +904,7 @@
         "</div>"
       );
     }
-    return '<div class="month-weekdays">' + WEEKDAY_MON_FIRST.map(function (w) { return "<span>" + w + "</span>"; }).join("") + "</div>" +
+    return '<div class="month-weekdays">' + WEEKDAY_SHORT.map(function (w) { return "<span>" + w + "</span>"; }).join("") + "</div>" +
       '<div class="month-grid">' + cells.join("") + "</div>";
   }
 
