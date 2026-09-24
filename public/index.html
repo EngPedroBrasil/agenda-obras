@@ -548,6 +548,9 @@
     line-height: 1.5;
     white-space: pre-wrap;
   }
+  #waModal { max-width: 560px; }
+  .wa-image-box img { width: 100%; display: block; border: 1px solid var(--border); border-radius: 10px; background: #fff; }
+  .wa-actions[hidden], #waShareBtn[hidden] { display: none; }
   .wa-actions { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   .wa-actions .btn {
     border: 1px solid var(--border);
@@ -671,6 +674,8 @@
 <div class="toast" id="toast"></div>
 
 <script src="lib/grouping.js"></script>
+<script src="lib/week-model.js"></script>
+<script src="lib/week-image.js"></script>
 <script>
 (function () {
   "use strict";
@@ -1221,9 +1226,54 @@
     return lines.join("\n").trim();
   }
 
+  /* ---- weekly image (canvas), shown in the message modal ---- */
+  var waImageBlob = null, waImageUrl = null, waImageToken = 0;
+
+  function weekImageFileName() { return "agenda-obras-" + dateKey(startOfWeek(cursor)) + ".png"; }
+
+  function generateWeekImage() {
+    var token = ++waImageToken;
+    var days = WeekModel.buildWeekModel({
+      weekStart: startOfWeek(cursor),
+      entries: entries,
+      groupBy: groupBy,
+      obraOrder: OBRAS.map(function (o) { return o.id; }),
+      personOrder: TEAM.map(function (p) { return p.id; }),
+      holidaysFor: holidaysForDate
+    });
+    return WeekImage.render({
+      days: days, groupBy: groupBy,
+      title: "Agenda de Obras", subtitle: "Semana de " + weekRangeLabel(),
+      obraById: obraById, personById: personById, logoSrc: "assets/blendi-symbol.png"
+    }).then(WeekImage.toBlob).then(function (blob) {
+      if (token !== waImageToken || !waModalOpen) return; // modal closed or reopened meanwhile
+      waImageBlob = blob;
+      if (waImageUrl) URL.revokeObjectURL(waImageUrl);
+      waImageUrl = URL.createObjectURL(blob);
+      var box = document.getElementById("waImageBox");
+      if (!box) return;
+      box.innerHTML = '<img src="' + waImageUrl + '" alt="Prévia da imagem da semana">';
+      var link = document.getElementById("waImageDownload");
+      link.href = waImageUrl;
+      link.download = weekImageFileName();
+      var file = new File([blob], weekImageFileName(), { type: "image/png" });
+      document.getElementById("waShareBtn").hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
+      document.getElementById("waImageActions").hidden = false;
+    }).catch(function () {
+      var box = document.getElementById("waImageBox");
+      if (box && token === waImageToken) box.innerHTML = '<p class="modal-sub">Não foi possível gerar a imagem agora.</p>';
+    });
+  }
+
   function renderWaModal() {
     var overlay = document.getElementById("waOverlay");
-    if (!waModalOpen) { overlay.classList.remove("show"); return; }
+    if (!waModalOpen) {
+      waImageToken++;
+      if (waImageUrl) { URL.revokeObjectURL(waImageUrl); waImageUrl = null; }
+      waImageBlob = null;
+      overlay.classList.remove("show");
+      return;
+    }
     var message = buildWeeklyWhatsAppMessage();
     var waLink = "https://wa.me/?text=" + encodeURIComponent(message);
     document.getElementById("waModal").innerHTML =
@@ -1231,10 +1281,18 @@
       '<p class="modal-sub">Confira o texto, edite se quiser, e copie ou abra direto no WhatsApp.</p>' +
       '<textarea class="wa-textarea" id="waText">' + h(message) + '</textarea>' +
       '<div class="wa-actions">' +
-      '<button class="btn" data-action="copy-wa-message">Copiar</button>' +
+      '<button class="btn" data-action="copy-wa-message">Copiar texto</button>' +
       '<a class="btn primary" href="' + waLink + '" target="_blank" rel="noopener">Abrir no WhatsApp</a>' +
+      '</div>' +
+      '<div class="modal-section-title">Imagem da semana</div>' +
+      '<div class="wa-image-box" id="waImageBox"><p class="modal-sub">Gerando imagem…</p></div>' +
+      '<div class="wa-actions" id="waImageActions" hidden>' +
+      '<button class="btn" data-action="copy-wa-image">Copiar imagem</button>' +
+      '<a class="btn" id="waImageDownload" href="#" download="agenda-obras.png">Baixar imagem</a>' +
+      '<button class="btn primary" id="waShareBtn" data-action="share-wa-image" hidden>Compartilhar</button>' +
       '</div>';
     overlay.classList.add("show");
+    generateWeekImage();
   }
 
   /* ---------------- events ---------------- */
@@ -1301,6 +1359,23 @@
     } else if (action === "close-wa-modal") {
       waModalOpen = false;
       renderWaModal();
+    } else if (action === "copy-wa-image") {
+      if (!waImageBlob) return;
+      if (navigator.clipboard && window.ClipboardItem) {
+        navigator.clipboard.write([new ClipboardItem({ "image/png": waImageBlob })]).then(function () {
+          showToast("Imagem copiada. Cole no WhatsApp.");
+        }).catch(function () {
+          showToast("Não foi possível copiar a imagem. Use Baixar imagem.");
+        });
+      } else {
+        showToast("Este navegador não copia imagem. Use Baixar imagem.");
+      }
+    } else if (action === "share-wa-image") {
+      if (!waImageBlob) return;
+      var shareFile = new File([waImageBlob], weekImageFileName(), { type: "image/png" });
+      navigator.share({ files: [shareFile], text: document.getElementById("waText").value }).catch(function (err) {
+        if (err && err.name !== "AbortError") showToast("Não foi possível compartilhar. Use Baixar imagem.");
+      });
     } else if (action === "copy-wa-message") {
       var textarea = document.getElementById("waText");
       var text = textarea ? textarea.value : "";
