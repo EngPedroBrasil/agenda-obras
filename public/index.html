@@ -384,6 +384,35 @@
     flex: none;
   }
   .entry-chip .rm:hover { color: var(--danger); }
+  .entry-chip { flex-wrap: wrap; }
+  .entry-chip .chip-comment { flex: none; font-size: 12px; line-height: 1; margin-top: 1px; cursor: help; }
+  .entry-chip .edit {
+    border: none; background: none; color: var(--ink-faint);
+    cursor: pointer; font-size: 13px; line-height: 1; padding: 2px;
+    flex: none;
+  }
+  .entry-chip .edit:hover { color: var(--accent); }
+  .chip-detail { flex: 1 0 100%; min-width: 0; }
+  .chip-comment-text { display: block; font-size: 12px; color: var(--ink-soft); line-height: 1.35; overflow-wrap: anywhere; }
+  .comment-edit { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+  .comment-edit input, .obra-comment {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 9px;
+    color: var(--ink);
+    font: inherit;
+    font-size: 13px;
+  }
+  .comment-edit input:focus, .obra-comment:focus { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
+  .comment-edit-actions { display: flex; gap: 6px; }
+  .btn-mini {
+    border: 1px solid var(--border); background: var(--surface); color: var(--ink);
+    padding: 5px 10px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px;
+  }
+  .btn-mini.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .obra-opt .obra-comment { margin: 2px 0 8px 40px; width: calc(100% - 40px); }
   .add-row {
     border: 1.5px dashed var(--border);
     background: transparent;
@@ -674,11 +703,29 @@
       return Array.isArray(data.entries) ? data.entries : [];
     });
   }
-  function submitAdd(date, person, obra) {
+  function submitUpdateComment(id, comment) {
     return fetch("/api/entries", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ op: "add", date: date, person: person, obra: obra })
+      body: JSON.stringify({ op: "update", id: id, comment: comment })
+    }).then(function (res) {
+      if (!res.ok) {
+        var err = new Error("update failed");
+        err.status = res.status;
+        throw err;
+      }
+      return res.json();
+    }).then(function (data) {
+      entries = Array.isArray(data.entries) ? data.entries : entries;
+    });
+  }
+  function submitAdd(date, person, obra, comment) {
+    var payload = { op: "add", date: date, person: person, obra: obra };
+    if (comment) payload.comment = comment;
+    return fetch("/api/entries", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload)
     }).then(function (res) {
       if (!res.ok) throw new Error("add failed");
       return res.json();
@@ -777,6 +824,7 @@
   var selectedPeople = {};
   var selectedObras = {};
   var modalDateKey = null;
+  var editingEntryId = null;
 
   function anyFilterActive() {
     return Object.keys(selectedPeople).length > 0 || Object.keys(selectedObras).length > 0;
@@ -833,13 +881,31 @@
     return MONTH_NAMES[cursor.getMonth()] + " de " + cursor.getFullYear();
   }
 
-  function entryChipHTML(en) {
+  // detailed=false: compact chip for the calendar (comment shown as an icon).
+  // detailed=true: chip for the day modal (full comment text + edit button).
+  function entryChipHTML(en, detailed) {
     var obra = obraById[en.obra], person = personById[en.person];
     if (!obra || !person) return "";
+    var badge = "", detail = "", editBtn = "";
+    if (detailed) {
+      editBtn = '<button class="edit" data-action="edit-comment" data-id="' + en.id + '" title="Editar comentário" aria-label="Editar comentário">&#9998;</button>';
+      if (editingEntryId === en.id) {
+        detail = '<div class="chip-detail"><form class="comment-edit" data-id="' + en.id + '">' +
+          '<input type="text" maxlength="140" value="' + h(en.comment || "") + '" placeholder="O que vai fazer lá?" aria-label="Comentário">' +
+          '<div class="comment-edit-actions"><button type="submit" class="btn-mini primary">Salvar</button>' +
+          '<button type="button" class="btn-mini" data-action="cancel-edit-comment">Cancelar</button></div></form></div>';
+      } else if (en.comment) {
+        detail = '<div class="chip-detail"><span class="chip-comment-text">' + h(en.comment) + '</span></div>';
+      }
+    } else if (en.comment) {
+      badge = '<span class="chip-comment" title="' + h(en.comment) + '" aria-label="Comentário: ' + h(en.comment) + '">&#128172;</span>';
+    }
     return '<div class="entry-chip" style="--chip-color:' + obra.color + '">' +
       '<img src="' + obra.icon + '" alt="">' +
       '<span class="chip-text"><span class="chip-name" title="' + h(person.name) + '">' + h(person.name) + '</span><span class="chip-obra" title="' + h(obra.name) + '">' + h(obra.shortName || obra.name) + '</span></span>' +
+      badge + editBtn +
       '<button class="rm" data-action="remove-entry" data-id="' + en.id + '" title="Remover" aria-label="Remover">&times;</button>' +
+      detail +
       "</div>";
   }
 
@@ -919,7 +985,7 @@
 
   function renderModal() {
     var overlay = document.getElementById("overlay");
-    if (!modalDateKey) { overlay.classList.remove("show"); return; }
+    if (!modalDateKey) { editingEntryId = null; overlay.classList.remove("show"); return; }
     var d = parseKey(modalDateKey);
     var dayEntries = entriesForDate(modalDateKey);
     var hol = holidaysForDate(d);
@@ -937,7 +1003,7 @@
           var person = personById[pid];
           if (!person) return "";
           return '<div class="person-group"><div class="pg-name">' + h(person.name) + '</div><div class="pg-obras">' +
-            byPerson[pid].map(function (en) { return entryChipHTML(en); }).join("") +
+            byPerson[pid].map(function (en) { return entryChipHTML(en, true); }).join("") +
             "</div></div>";
         }).join("");
 
@@ -947,8 +1013,9 @@
     }).join("");
 
     var obraOptions = OBRAS.map(function (o) {
-      return '<label class="opt-row"><input type="checkbox" name="modal-obra" value="' + o.id + '" style="accent-color:var(--accent)">' +
-        '<img src="' + o.icon + '" alt=""><span class="opt-label">' + h(o.name) + '<div class="opt-sub">' + h(o.city) + '</div></span></label>';
+      return '<div class="obra-opt"><label class="opt-row"><input type="checkbox" name="modal-obra" value="' + o.id + '" style="accent-color:var(--accent)">' +
+        '<img src="' + o.icon + '" alt=""><span class="opt-label">' + h(o.name) + '<div class="opt-sub">' + h(o.city) + '</div></span></label>' +
+        '<input type="text" class="obra-comment" data-obra="' + o.id + '" maxlength="140" placeholder="O que vai fazer lá? (opcional)" aria-label="Comentário para ' + h(o.name) + '" hidden></div>';
     }).join("");
 
     var holHTML = hol.length ? holidayPillsHTML(hol) + '<p class="modal-sub" style="margin-top:6px">' + hol.map(function (x) { return h(x.label); }).join(" · ") + "</p>" : "";
@@ -974,6 +1041,10 @@
       var person = form.querySelector('input[name="modal-person"]:checked');
       var obras = form.querySelectorAll('input[name="modal-obra"]:checked');
       addBtn.disabled = !(person && obras.length);
+      form.querySelectorAll('input[name="modal-obra"]').forEach(function (cb) {
+        var box = form.querySelector('.obra-comment[data-obra="' + cb.value + '"]');
+        if (box) box.hidden = !cb.checked;
+      });
     }
     form.addEventListener("change", refreshBtn);
     form.addEventListener("submit", function (ev) {
@@ -988,7 +1059,9 @@
       var obraIds = Array.prototype.map.call(obras, function (cb) { return cb.value; });
       var chain = Promise.resolve();
       obraIds.forEach(function (obraId) {
-        chain = chain.then(function () { return submitAdd(dateKeyToAdd, personId, obraId); });
+        var box = form.querySelector('.obra-comment[data-obra="' + obraId + '"]');
+        var comment = box ? box.value.trim() : "";
+        chain = chain.then(function () { return submitAdd(dateKeyToAdd, personId, obraId, comment); });
       });
       chain.then(function () {
         renderModal();
@@ -1089,7 +1162,7 @@
         }
         var pdata = sector.people[person.id];
         if (!pdata.days[dayLabel]) { pdata.days[dayLabel] = []; pdata.dayOrder.push(dayLabel); }
-        pdata.days[dayLabel].push(obra.shortName || obra.name);
+        pdata.days[dayLabel].push((obra.shortName || obra.name) + (en.comment ? " (" + en.comment + ")" : ""));
       });
     }
     var lines = ["📅 *Agenda de Obras — semana de " + weekRangeLabel() + "*", ""];
@@ -1175,6 +1248,14 @@
       }).catch(function () {
         showToast("Não foi possível remover agora. Tente de novo.");
       });
+    } else if (action === "edit-comment") {
+      editingEntryId = el.getAttribute("data-id");
+      renderModal();
+      var editInput = document.querySelector(".comment-edit input");
+      if (editInput) { editInput.focus(); editInput.setSelectionRange(editInput.value.length, editInput.value.length); }
+    } else if (action === "cancel-edit-comment") {
+      editingEntryId = null;
+      renderModal();
     } else if (action === "open-wa-modal") {
       waModalOpen = true;
       renderWaModal();
@@ -1195,6 +1276,27 @@
         showToast("Selecione e copie o texto manualmente.");
       }
     }
+  });
+  document.addEventListener("submit", function (ev) {
+    var editForm = ev.target.closest(".comment-edit");
+    if (!editForm) return;
+    ev.preventDefault();
+    var id = editForm.getAttribute("data-id");
+    var text = editForm.querySelector("input").value.trim();
+    submitUpdateComment(id, text).then(function () {
+      editingEntryId = null;
+      renderModal();
+      renderCalendar();
+      showToast("Comentário salvo.");
+    }).catch(function (err) {
+      if (err && err.status === 404) {
+        editingEntryId = null;
+        fetchEntries().then(function (loaded) { entries = loaded; render(); });
+        showToast("Essa marcação não existe mais.");
+      } else {
+        showToast("Não foi possível salvar agora. Tente de novo.");
+      }
+    });
   });
   document.addEventListener("keydown", function (ev) {
     if (ev.key === "Escape" && modalDateKey) { modalDateKey = null; renderModal(); }
