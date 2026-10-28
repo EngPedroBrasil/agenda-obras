@@ -165,12 +165,17 @@
     color: var(--ink-faint);
   }
 
-  .nav-cluster {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-wrap: wrap;
+  .top-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+  .nav-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .nav-spacer { flex: 1; }
+  .is-off { visibility: hidden; }
+  .auth-area { position: relative; display: flex; align-items: center; }
+  .local-banner {
+    margin: 0 0 12px; padding: 8px 12px; border-radius: 10px;
+    background: var(--holiday-fac-bg); color: var(--holiday-fac); border: 1px dashed var(--holiday-fac);
+    font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em;
   }
+  .local-banner[hidden] { display: none; }
   .seg {
     display: inline-flex;
     background: var(--surface-2);
@@ -231,8 +236,8 @@
     font-weight: 700;
     font-size: 15px;
     color: var(--ink);
-    text-transform: capitalize;
     white-space: nowrap;
+    min-width: 300px;
   }
 
   /* ---------- filters ---------- */
@@ -521,7 +526,7 @@
     gap: 10px;
     margin-bottom: 4px;
   }
-  .modal h2 { font-size: 18px; margin: 0; text-transform: capitalize; }
+  .modal h2 { font-size: 18px; margin: 0; }
   .modal .close-x {
     border: none; background: var(--surface-2); color: var(--ink-soft);
     width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 15px;
@@ -605,7 +610,8 @@
     .week-grid { grid-template-columns: repeat(7, minmax(130px, 1fr)); }
     .filter-label { width: 100%; }
     .topbar { flex-direction: column; align-items: stretch; }
-    .nav-cluster { justify-content: space-between; }
+    .nav-row { justify-content: space-between; }
+    .period-label { min-width: 0; }
   }
 </style>
 
@@ -615,25 +621,30 @@
       <h1 class="brand"><span class="brand-mark"><img src="assets/blendi-symbol.png" alt=""></span>Agenda de Obras</h1>
       <p class="tagline">Clique num dia pra marcar sua presen&ccedil;a numa obra &mdash; todo mundo v&ecirc; a mesma agenda, atualizada ao vivo.</p>
     </div>
-    <div class="nav-cluster">
-      <div class="seg" id="viewSeg">
-        <button data-action="set-view" data-view="week">Semana</button>
-        <button data-action="set-view" data-view="month">M&ecirc;s</button>
-      </div>
-      <div class="seg" id="groupSeg" role="group" aria-label="Agrupar por" style="display:none;">
-        <button data-action="set-group" data-group="person" title="Um chip por pessoa">Por pessoa</button>
-        <button data-action="set-group" data-group="obra" title="Um card por obra, com os nomes de quem estará lá">Por obra</button>
-      </div>
-      <div class="arrows">
-        <button data-action="prev" aria-label="Anterior">&#8249;</button>
-        <button data-action="today" aria-label="Hoje" style="width:auto;padding:0 10px;font-size:12px;font-weight:700;">Hoje</button>
-        <button data-action="next" aria-label="Pr&oacute;ximo">&#8250;</button>
-      </div>
-      <span class="period-label" id="periodLabel"></span>
-      <button class="today-btn" id="waBtn" data-action="open-wa-modal" style="display:none;">Gerar mensagem</button>
+    <div class="top-actions">
+      <div class="auth-area" id="authArea"></div>
       <button class="theme-toggle" id="themeToggle" data-action="toggle-theme" aria-label="Alternar tema claro/escuro"></button>
     </div>
   </header>
+  <div class="local-banner" id="localBanner" hidden>AMBIENTE LOCAL DE TESTE &mdash; os dados desta tela s&atilde;o de teste e n&atilde;o afetam a produ&ccedil;&atilde;o.</div>
+  <nav class="nav-row" aria-label="Navega&ccedil;&atilde;o do calend&aacute;rio">
+    <div class="seg" id="viewSeg">
+      <button data-action="set-view" data-view="week">Semana</button>
+      <button data-action="set-view" data-view="month">M&ecirc;s</button>
+    </div>
+    <div class="arrows" id="arrowsBox">
+      <button data-action="prev" aria-label="Anterior">&#8249;</button>
+      <button data-action="today" aria-label="Hoje" style="width:auto;padding:0 10px;font-size:12px;font-weight:700;">Hoje</button>
+      <button data-action="next" aria-label="Pr&oacute;ximo">&#8250;</button>
+    </div>
+    <span class="period-label" id="periodLabel"></span>
+    <span class="nav-spacer"></span>
+    <div class="seg" id="groupSeg" role="group" aria-label="Agrupar por">
+      <button data-action="set-group" data-group="person" title="Um chip por pessoa">Por pessoa</button>
+      <button data-action="set-group" data-group="obra" title="Um card por obra, com os nomes de quem estar&aacute; l&aacute;">Por obra</button>
+    </div>
+    <button class="today-btn" id="waBtn" data-action="open-wa-modal">Gerar mensagem</button>
+  </nav>
 
   <section class="filters">
     <div class="filter-row">
@@ -705,6 +716,7 @@
   TEAM.forEach(function (p) { personById[p.id] = p; });
 
   function initials(name) { return name.slice(0, 2).toUpperCase(); }
+  function capFirst(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
 
   /* ---------------- data ---------------- */
   var entries = [];
@@ -894,7 +906,7 @@
       }
       return start.getDate() + " de " + MONTH_NAMES[start.getMonth()] + " – " + end.getDate() + " de " + MONTH_NAMES[end.getMonth()] + " de " + end.getFullYear();
     }
-    return MONTH_NAMES[cursor.getMonth()] + " de " + cursor.getFullYear();
+    return capFirst(MONTH_NAMES[cursor.getMonth()] + " de " + cursor.getFullYear());
   }
 
   // detailed=false: compact chip for the calendar (comment shown as an icon).
@@ -1018,9 +1030,9 @@
     document.getElementById("viewSeg").querySelectorAll("button").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-view") === view);
     });
-    document.getElementById("waBtn").style.display = view === "week" ? "" : "none";
+    document.getElementById("waBtn").classList.toggle("is-off", view !== "week");
     var groupSeg = document.getElementById("groupSeg");
-    groupSeg.style.display = view === "week" ? "" : "none";
+    groupSeg.classList.toggle("is-off", view !== "week");
     groupSeg.querySelectorAll("button").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-group") === groupBy);
     });
@@ -1033,7 +1045,7 @@
     var dayEntries = entriesForDate(modalDateKey);
     var hol = holidaysForDate(d);
     var weekdayFull = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"][d.getDay()];
-    var label = weekdayFull + ", " + d.getDate() + " de " + MONTH_NAMES[d.getMonth()];
+    var label = capFirst(weekdayFull + ", " + d.getDate() + " de " + MONTH_NAMES[d.getMonth()]);
 
     var byPerson = {};
     dayEntries.forEach(function (en) {
