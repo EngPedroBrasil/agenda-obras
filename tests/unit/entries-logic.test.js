@@ -158,3 +158,66 @@ test("addEntry returns the very same array when the slot exists and nothing woul
   assert.equal(addEntry(existing, { id: "a2", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "y", comment: "igual" }), existing);
   assert.equal(addEntry(existing, { id: "a3", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "z" }), existing);
 });
+
+// --- reunião com horário ------------------------------------------------
+
+const logic = require("../../netlify/functions/lib/entries-logic");
+
+test("validateMeeting accepts absent meeting and a valid range", function () {
+  assert.deepEqual(logic.validateMeeting(undefined), { ok: true });
+  assert.deepEqual(logic.validateMeeting(null), { ok: true });
+  assert.deepEqual(logic.validateMeeting({ start: "14:00", end: "15:30" }), { ok: true });
+  assert.deepEqual(logic.validateMeeting({ start: "00:00", end: "23:59" }), { ok: true });
+});
+
+test("validateMeeting rejects bad shapes, bad times and ranges that do not move forward", function () {
+  [
+    "14:00", [], 5,
+    { start: "9:00", end: "10:00" },
+    { start: "24:00", end: "23:59" },
+    { start: "12:60", end: "13:00" },
+    { start: "10:00" },
+    { start: "10:00", end: "10:00" },
+    { start: "11:00", end: "10:00" }
+  ].forEach(function (value) {
+    assert.equal(logic.validateMeeting(value).ok, false, JSON.stringify(value));
+  });
+});
+
+test("validateEntry validates the optional meeting", function () {
+  assert.equal(validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada", meeting: { start: "14:00", end: "15:00" } }).ok, true);
+  assert.equal(validateEntry({ date: "2026-08-27", person: "pedro", obra: "almada", meeting: { start: "15:00", end: "14:00" } }).ok, false);
+});
+
+test("addEntry updates a different meeting on an existing slot and keeps the comment", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "vistoria", meeting: { start: "09:00", end: "10:00" } }];
+  const result = addEntry(existing, { id: "a2", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "y", meeting: { start: "14:00", end: "15:00" } });
+  assert.deepEqual(result[0].meeting, { start: "14:00", end: "15:00" });
+  assert.equal(result[0].comment, "vistoria");
+  assert.equal(addEntry(result, { id: "a3", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "z", meeting: { start: "14:00", end: "15:00" } }), result);
+});
+
+test("updateEntry changes only the keys present in the patch", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "vistoria", meeting: { start: "09:00", end: "10:00" } }];
+  const onlyMeeting = logic.updateEntry(existing, "a1", { meeting: { start: "14:00", end: "15:00", extra: 1 } });
+  assert.equal(onlyMeeting[0].comment, "vistoria");
+  assert.deepEqual(onlyMeeting[0].meeting, { start: "14:00", end: "15:00" });
+  const onlyComment = logic.updateEntry(existing, "a1", { comment: "  novo  " });
+  assert.equal(onlyComment[0].comment, "novo");
+  assert.deepEqual(onlyComment[0].meeting, { start: "09:00", end: "10:00" });
+});
+
+test("updateEntry with meeting null removes it; with a blank comment removes the comment", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "vistoria", meeting: { start: "09:00", end: "10:00" } }];
+  const result = logic.updateEntry(existing, "a1", { meeting: null, comment: "   " });
+  assert.equal("meeting" in result[0], false);
+  assert.equal("comment" in result[0], false);
+});
+
+test("updateEntry returns null for an unknown id and does not mutate its input", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x" }];
+  assert.equal(logic.updateEntry(existing, "nope", { comment: "x" }), null);
+  logic.updateEntry(existing, "a1", { comment: "x", meeting: { start: "09:00", end: "10:00" } });
+  assert.equal(existing[0].comment, undefined);
+  assert.equal(existing[0].meeting, undefined);
+});

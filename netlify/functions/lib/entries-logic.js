@@ -3,6 +3,7 @@
 const PEOPLE_IDS = ["pedro", "jean", "haniel", "gustavo", "bruna"];
 const OBRA_IDS = ["almada", "montebello", "miraggio", "palmeiras", "tulipas", "porto"];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_COMMENT_LENGTH = 140;
 
 function validateComment(value) {
@@ -18,6 +19,29 @@ function validateComment(value) {
 
 function normalizeComment(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function validateMeeting(value) {
+  if (value === undefined || value === null) return { ok: true };
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { ok: false, error: "reunião inválida" };
+  }
+  if (typeof value.start !== "string" || !TIME_RE.test(value.start) ||
+      typeof value.end !== "string" || !TIME_RE.test(value.end)) {
+    return { ok: false, error: "horário da reunião inválido (esperado HH:MM)" };
+  }
+  if (value.end <= value.start) {
+    return { ok: false, error: "o fim da reunião deve ser depois do início" };
+  }
+  return { ok: true };
+}
+
+function normalizeMeeting(value) {
+  return value ? { start: value.start, end: value.end } : null;
+}
+
+function sameMeeting(a, b) {
+  return !!a && !!b && a.start === b.start && a.end === b.end;
 }
 
 function isRealDate(key) {
@@ -40,7 +64,9 @@ function validateEntry(input) {
   if (!OBRA_IDS.includes(input.obra)) {
     return { ok: false, error: "obra inválida" };
   }
-  return validateComment(input.comment);
+  var commentCheck = validateComment(input.comment);
+  if (!commentCheck.ok) return commentCheck;
+  return validateMeeting(input.meeting);
 }
 
 function sameSlot(a, b) {
@@ -58,6 +84,7 @@ function addEntry(entries, entryWithId) {
     matched = true;
     var patch = {};
     if (entryWithId.comment && entryWithId.comment !== en.comment) patch.comment = entryWithId.comment;
+    if (entryWithId.meeting && !sameMeeting(entryWithId.meeting, en.meeting)) patch.meeting = entryWithId.meeting;
     if (Object.keys(patch).length === 0) return en;
     changed = true;
     return Object.assign({}, en, patch);
@@ -70,23 +97,33 @@ function removeEntry(entries, id) {
   return entries.filter(function (en) { return en.id !== id; });
 }
 
-// Returns a new array with the entry's comment set (or removed when blank),
-// or null when no entry has that id.
-function updateEntryComment(entries, id, comment) {
-  var text = normalizeComment(comment);
+// Returns a new array with the entry patched, or null when no entry has that id.
+// Only the keys present in `patch` change: `comment` (blank removes it) and
+// `meeting` ({start,end} sets it, null removes it).
+function updateEntry(entries, id, patch) {
   var found = false;
   var updated = entries.map(function (en) {
     if (en.id !== id) return en;
     found = true;
     var copy = Object.assign({}, en);
-    if (text) copy.comment = text; else delete copy.comment;
+    if ("comment" in patch) {
+      var text = normalizeComment(patch.comment);
+      if (text) copy.comment = text; else delete copy.comment;
+    }
+    if ("meeting" in patch) {
+      if (patch.meeting) copy.meeting = normalizeMeeting(patch.meeting); else delete copy.meeting;
+    }
     return copy;
   });
   return found ? updated : null;
 }
 
+function updateEntryComment(entries, id, comment) {
+  return updateEntry(entries, id, { comment: comment });
+}
+
 module.exports = {
   PEOPLE_IDS, OBRA_IDS, isRealDate,
-  validateEntry, validateComment, normalizeComment,
-  addEntry, removeEntry, updateEntryComment
+  validateEntry, validateComment, validateMeeting, normalizeComment, normalizeMeeting,
+  addEntry, removeEntry, updateEntry, updateEntryComment
 };
