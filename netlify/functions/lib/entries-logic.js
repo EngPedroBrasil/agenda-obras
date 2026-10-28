@@ -43,11 +43,26 @@ function validateEntry(input) {
   return validateComment(input.comment);
 }
 
+function sameSlot(a, b) {
+  return a.date === b.date && a.person === b.person && a.obra === b.obra;
+}
+
+// Adding a slot that already exists never duplicates it: a new, non-empty, different
+// comment replaces the stored one (id and createdAt are kept). Returns the very same
+// array when nothing changed, so callers can tell "no-op" from "changed" by reference.
 function addEntry(entries, entryWithId) {
-  var dup = entries.some(function (en) {
-    return en.date === entryWithId.date && en.person === entryWithId.person && en.obra === entryWithId.obra;
+  var matched = false;
+  var changed = false;
+  var result = entries.map(function (en) {
+    if (!sameSlot(en, entryWithId)) return en;
+    matched = true;
+    var patch = {};
+    if (entryWithId.comment && entryWithId.comment !== en.comment) patch.comment = entryWithId.comment;
+    if (Object.keys(patch).length === 0) return en;
+    changed = true;
+    return Object.assign({}, en, patch);
   });
-  if (dup) return entries;
+  if (matched) return changed ? result : entries;
   return entries.concat([entryWithId]);
 }
 

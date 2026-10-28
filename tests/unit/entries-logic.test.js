@@ -134,3 +134,27 @@ test("validateEntry accepts 29 February in a leap year and the last day of a mon
   assert.equal(validateEntry({ date: "2028-02-29", person: "pedro", obra: "almada" }).ok, true);
   assert.equal(validateEntry({ date: "2026-10-31", person: "pedro", obra: "almada" }).ok, true);
 });
+
+// --- remarcar o mesmo slot --------------------------------------------
+
+test("addEntry replaces the comment when the same slot is added again with a different one", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "antigo" }];
+  const result = addEntry(existing, { id: "a2", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "y", comment: "novo" });
+  assert.equal(result.length, 1);
+  assert.equal(result[0].id, "a1");
+  assert.equal(result[0].createdAt, "x");
+  assert.equal(result[0].comment, "novo");
+  assert.equal(existing[0].comment, "antigo");
+});
+
+test("addEntry sets a comment on an existing entry that had none", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x" }];
+  const result = addEntry(existing, { id: "a2", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "y", comment: "vistoria" });
+  assert.equal(result[0].comment, "vistoria");
+});
+
+test("addEntry returns the very same array when the slot exists and nothing would change", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", comment: "igual" }];
+  assert.equal(addEntry(existing, { id: "a2", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "y", comment: "igual" }), existing);
+  assert.equal(addEntry(existing, { id: "a3", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "z" }), existing);
+});
