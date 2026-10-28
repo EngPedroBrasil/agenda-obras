@@ -13,11 +13,12 @@ Comandos abaixo no PowerShell, dentro da pasta do repositório.
 ## 1. Cópia de segurança dos dados de hoje (fora do Netlify)
 
 ```powershell
-$dados = Invoke-RestMethod -Uri "https://SEU-SITE.netlify.app/api/entries"
-$dados | ConvertTo-Json -Depth 10 | Out-File -Encoding utf8 "agenda-backup-antes-do-v2.json"
+curl.exe -L -o "$HOME\Desktop\agenda-backup-antes-do-v2.json" "https://SEU-SITE.netlify.app/api/entries"
 ```
 
-Guarde o arquivo fora da pasta do repositório (ele não deve ir para o GitHub). Abra-o e confira que tem as marcações.
+Use o `curl.exe` (já vem no Windows): ele grava os bytes exatamente como o servidor enviou. O `Invoke-RestMethod` do Windows PowerShell 5.1 lê os acentos errado (`GestÃ£o` em vez de `Gestão`) e estragaria a cópia.
+
+Guarde o arquivo fora da pasta do repositório (ele não deve ir para o GitHub). Abra-o no Bloco de Notas e confira que tem as marcações e que os acentos estão certos.
 
 ## 2. Variáveis de ambiente no Netlify (não geram deploy)
 
