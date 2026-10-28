@@ -100,3 +100,10 @@ test("holidays come from the injected lookup for each day's own date", function 
 test("holidays default to an empty list when no lookup is given", function () {
   model().forEach(function (d) { assert.deepEqual(d.holidays, []); });
 });
+
+test("person view carries the meeting of each item", function () {
+  const days = model({
+    entries: [{ id: "1", date: "2026-09-24", person: "jean", obra: "almada", meeting: { start: "14:00", end: "15:30" } }]
+  });
+  assert.deepEqual(days[4].items, [{ person: "jean", obra: "almada", meeting: { start: "14:00", end: "15:30" } }]);
+});

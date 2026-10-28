@@ -25,6 +25,7 @@
         if (!en) return;
         var entry = { person: personId };
         if (en.comment) entry.comment = en.comment;
+        if (en.meeting) entry.meeting = en.meeting;
         people.push(entry);
       });
       groups.push({ obra: obraId, people: people });

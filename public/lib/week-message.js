@@ -2,11 +2,11 @@
 // and the unit tests (require).
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
-    module.exports = factory();
+    module.exports = factory(require("./meeting-format"));
   } else {
-    root.WeekMessage = factory();
+    root.WeekMessage = factory(root.MeetingFormat);
   }
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : this, function (MeetingFormat) {
   var WEEKDAY_FULL = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -36,7 +36,8 @@
         }
         var pdata = sector.people[person.id];
         if (!pdata.days[dayLabel]) { pdata.days[dayLabel] = []; pdata.dayOrder.push(dayLabel); }
-        pdata.days[dayLabel].push((obra.shortName || obra.name) + (en.comment ? " (" + en.comment + ")" : ""));
+        var meeting = MeetingFormat.formatMeetingShort(en.meeting);
+        pdata.days[dayLabel].push((obra.shortName || obra.name) + (meeting ? ", reunião " + meeting : "") + (en.comment ? " (" + en.comment + ")" : ""));
       });
     }
 

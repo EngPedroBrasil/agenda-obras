@@ -79,3 +79,15 @@ test("groupByObra lists a person once even if the same entry is stored twice", f
     { obra: "almada", people: [{ person: "pedro" }] }
   ]);
 });
+
+test("groupByObra carries the meeting of each person", function () {
+  const Grouping = require("../../public/lib/grouping");
+  const groups = Grouping.groupByObra([
+    { person: "jean", obra: "almada", meeting: { start: "14:00", end: "15:00" } },
+    { person: "pedro", obra: "almada", comment: "x" }
+  ], ["almada"], ["pedro", "jean"]);
+  assert.deepEqual(groups[0].people, [
+    { person: "pedro", comment: "x" },
+    { person: "jean", meeting: { start: "14:00", end: "15:00" } }
+  ]);
+});

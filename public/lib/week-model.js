@@ -20,6 +20,7 @@
         if (!en) return;
         var item = { person: personId, obra: obraId };
         if (en.comment) item.comment = en.comment;
+        if (en.meeting) item.meeting = en.meeting;
         items.push(item);
       });
     });
