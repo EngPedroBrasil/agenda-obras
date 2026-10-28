@@ -123,7 +123,7 @@ function makeHandler(store, opts) {
     if (problem) return A.json(500, { error: problem });
 
     const users = await A.loadUsers(store, settings);
-    const user = A.currentUser(event, users, settings);
+    const user = A.actingUser(event, users, settings);
     const state = await readState(store);
 
     const allowed = authorize(user, payload, state.entries);

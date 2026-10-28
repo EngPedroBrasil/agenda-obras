@@ -22,7 +22,9 @@ function makeHandler(store, opts) {
     const me = A.currentUser(event, users, settings);
     if (!me) return A.json(401, { error: "faça login" });
     if (me.mustChange) return A.json(403, { error: "troque a senha antes de continuar" });
-    if (me.role !== "admin") return A.json(403, { error: "apenas o administrador" });
+    if (U.effectiveRole(me, settings.now()) !== "admin") {
+      return A.json(403, { error: me.role === "admin" ? "ligue o modo administrador para usar esta função" : "apenas o administrador" });
+    }
 
     if (payload.op === "resetPassword") {
       const id = A.resolveUserId(payload.user);

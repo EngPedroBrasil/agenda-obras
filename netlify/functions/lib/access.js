@@ -9,6 +9,7 @@ const OWN = "você só pode alterar as suas próprias marcações";
 function authorize(user, payload, entries) {
   if (!user) return deny(401, "faça login para alterar a agenda");
   if (user.mustChange) return deny(403, "troque a senha antes de alterar a agenda");
+  if (user.role === "manager") return deny(403, "o gestor acompanha a agenda, mas não altera marcações");
   if (user.role === "admin") return { ok: true };
 
   function own(person) {
