@@ -1,102 +1,133 @@
 "use strict";
 
-const { getStore } = require("@netlify/blobs");
-const {
-  validateEntry, validateComment, normalizeComment,
-  addEntry, removeEntry, updateEntryComment
-} = require("./lib/entries-logic");
+const L = require("./lib/entries-logic");
+const W = require("./lib/weeks-logic");
+const A = require("./lib/auth-core");
+const { authorize } = require("./lib/access");
+const { ensureDailySnapshot, readState } = require("./lib/backup-logic");
+const { resolveStore } = require("./lib/store");
 
-const STORE_NAME = "agenda-obras";
-const BLOB_KEY = "entries";
+const ENTRIES_KEY = "entries";
+const WEEKS_KEY = "weeks";
 
-function jsonResponse(statusCode, bodyObj) {
-  return {
-    statusCode: statusCode,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(bodyObj)
-  };
+function fail(status, error) {
+  return { ok: false, status: status, error: error };
 }
 
-function makeHandler(store) {
+function done(state, entries, affected) {
+  return { ok: true, entries: entries, weeks: W.reopenForEntries(state.weeks, affected) };
+}
+
+// Pure: turns one request into the next state, or an error. Nothing is written here.
+function applyOp(payload, state, iso) {
+  const entries = state.entries;
+  const weeks = state.weeks;
+
+  switch (payload.op) {
+    case "add": {
+      const check = L.validateEntry(payload);
+      if (!check.ok) return fail(400, check.error);
+      const next = L.addEntry(entries, L.buildEntry(payload, L.newId(), iso));
+      return done(state, next, next === entries ? [] : [{ person: payload.person, date: payload.date }]);
+    }
+
+    case "addMany": {
+      const result = L.addManyEntries(entries, payload.items, function (item) {
+        return L.buildEntry(item, L.newId(), iso);
+      });
+      if (!result.ok) return fail(400, result.error);
+      return done(state, result.entries, result.affected);
+    }
+
+    case "update": {
+      if (typeof payload.id !== "string" || !payload.id) return fail(400, "id obrigatório para atualizar");
+      const patch = {};
+      if ("comment" in payload) {
+        const c = L.validateComment(payload.comment);
+        if (!c.ok) return fail(400, c.error);
+        patch.comment = payload.comment;
+      }
+      if ("meeting" in payload) {
+        if (payload.meeting !== null) {
+          const m = L.validateMeeting(payload.meeting);
+          if (!m.ok) return fail(400, m.error);
+        }
+        patch.meeting = payload.meeting;
+      }
+      if (!("comment" in patch) && !("meeting" in patch)) return fail(400, "nada para atualizar (envie comment e/ou meeting)");
+      const next = L.updateEntry(entries, payload.id, patch);
+      if (!next) return fail(404, "marcação não encontrada");
+      const entry = entries.filter(function (e) { return e.id === payload.id; })[0];
+      const changed = JSON.stringify(next) !== JSON.stringify(entries);
+      return done(state, next, changed ? [{ person: entry.person, date: entry.date }] : []);
+    }
+
+    case "remove": {
+      if (typeof payload.id !== "string" || !payload.id) return fail(400, "id obrigatório para remover");
+      const entry = entries.filter(function (e) { return e.id === payload.id; })[0];
+      if (!entry) return done(state, entries, []);
+      return done(state, L.removeEntry(entries, payload.id), [{ person: entry.person, date: entry.date }]);
+    }
+
+    case "confirmWeek":
+    case "unconfirmWeek": {
+      const check = W.validateWeekOp(payload);
+      if (!check.ok) return fail(400, check.error);
+      const next = payload.op === "confirmWeek"
+        ? W.confirmWeek(weeks, payload.week, payload.person, iso)
+        : W.unconfirmWeek(weeks, payload.week, payload.person);
+      return { ok: true, entries: entries, weeks: next };
+    }
+
+    default:
+      return fail(400, "op inválida (esperado add, addMany, update, remove, confirmWeek ou unconfirmWeek)");
+  }
+}
+
+function differs(a, b) {
+  return a !== b && JSON.stringify(a) !== JSON.stringify(b);
+}
+
+function makeHandler(store, opts) {
+  const settings = A.readSettings(opts);
+
   return async function handler(event) {
     if (event.httpMethod === "GET") {
-      const current = (await store.get(BLOB_KEY, { type: "json" })) || [];
-      return jsonResponse(200, { entries: current });
+      const state = await readState(store);
+      return A.json(200, { entries: state.entries, confirmations: state.weeks });
     }
 
-    if (event.httpMethod === "POST") {
-      let payload;
-      try {
-        payload = JSON.parse(event.body || "{}");
-      } catch (e) {
-        return jsonResponse(400, { error: "JSON inválido" });
-      }
+    if (event.httpMethod !== "POST") return A.json(405, { error: "método não suportado" });
 
-      const current = (await store.get(BLOB_KEY, { type: "json" })) || [];
+    const body = A.readJsonBody(event);
+    if (!body.ok) return A.json(body.status, { error: body.error });
+    const payload = body.payload;
 
-      if (payload.op === "remove") {
-        if (typeof payload.id !== "string" || !payload.id) {
-          return jsonResponse(400, { error: "id obrigatório para remover" });
-        }
-        const updated = removeEntry(current, payload.id);
-        await store.setJSON(BLOB_KEY, updated);
-        return jsonResponse(200, { entries: updated });
-      }
+    const problem = A.configProblem(settings);
+    if (problem) return A.json(500, { error: problem });
 
-      if (payload.op === "add") {
-        const check = validateEntry(payload);
-        if (!check.ok) {
-          return jsonResponse(400, { error: check.error });
-        }
-        const entryWithId = {
-          id: "e" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-          date: payload.date,
-          person: payload.person,
-          obra: payload.obra,
-          createdAt: new Date().toISOString()
-        };
-        const comment = normalizeComment(payload.comment);
-        if (comment) entryWithId.comment = comment;
-        const updated = addEntry(current, entryWithId);
-        await store.setJSON(BLOB_KEY, updated);
-        return jsonResponse(200, { entries: updated });
-      }
+    const users = await A.loadUsers(store, settings);
+    const user = A.currentUser(event, users, settings);
+    const state = await readState(store);
 
-      if (payload.op === "update") {
-        if (typeof payload.id !== "string" || !payload.id) {
-          return jsonResponse(400, { error: "id obrigatório para atualizar" });
-        }
-        const commentCheck = validateComment(payload.comment);
-        if (!commentCheck.ok) {
-          return jsonResponse(400, { error: commentCheck.error });
-        }
-        const updated = updateEntryComment(current, payload.id, payload.comment);
-        if (!updated) {
-          return jsonResponse(404, { error: "marcação não encontrada" });
-        }
-        await store.setJSON(BLOB_KEY, updated);
-        return jsonResponse(200, { entries: updated });
-      }
+    const allowed = authorize(user, payload, state.entries);
+    if (!allowed.ok) return A.json(allowed.status, { error: allowed.error });
 
-      return jsonResponse(400, { error: "op inválida (esperado 'add', 'remove' ou 'update')" });
+    const out = applyOp(payload, state, new Date(settings.now()).toISOString());
+    if (!out.ok) return A.json(out.status, { error: out.error });
+
+    const entriesChanged = differs(out.entries, state.entries);
+    const weeksChanged = differs(out.weeks, state.weeks);
+    if (entriesChanged || weeksChanged) {
+      await ensureDailySnapshot(store, settings.now());
+      if (entriesChanged) await store.setJSON(ENTRIES_KEY, out.entries);
+      if (weeksChanged) await store.setJSON(WEEKS_KEY, out.weeks);
     }
-
-    return jsonResponse(405, { error: "método não suportado" });
+    return A.json(200, { entries: out.entries, confirmations: out.weeks });
   };
-}
-
-function resolveStore() {
-  if (process.env.BLOBS_SITE_ID && process.env.BLOBS_TOKEN) {
-    return getStore({
-      name: STORE_NAME,
-      siteID: process.env.BLOBS_SITE_ID,
-      token: process.env.BLOBS_TOKEN
-    });
-  }
-  return getStore(STORE_NAME);
 }
 
 exports.handler = async function (event, context) {
-  return makeHandler(resolveStore())(event, context);
+  return makeHandler(resolveStore(process.env))(event, context);
 };
 exports.makeHandler = makeHandler;
