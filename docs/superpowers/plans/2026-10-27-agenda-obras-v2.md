@@ -196,7 +196,7 @@ EOF
 cat > .env.example <<'EOF'
 # Copie para .env (que NÃO vai para o git) para rodar localmente com: npx netlify-cli dev --offline
 SESSION_SECRET=troque-por-um-texto-aleatorio-com-pelo-menos-32-caracteres
-INITIAL_PASSWORD=Mudar@123
+INITIAL_PASSWORD=defina-a-senha-inicial-aqui
 AGENDA_LOCAL=1
 EOF
 git config core.fileMode false
@@ -3666,25 +3666,28 @@ async function stubApi(page, opts) {
   return state;
 }
 
-// Serves public/ at http://localhost:8888/ so the page believes it is running locally.
-async function serveLocal(page) {
-  await page.route("http://localhost:8888/**", async function (route) {
+// Serves public/ at `origin` (the page needs a real http(s) origin so fetch() can be intercepted;
+// file:// pages cannot call the stubbed /api routes). localhost:8888 makes the page believe it runs locally.
+async function serveSite(page, origin) {
+  await page.route(origin + "/**", async function (route) {
     const url = new URL(route.request().url());
     const rel = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1));
     const file = path.join(PUBLIC_DIR, rel);
     if (file.indexOf(PUBLIC_DIR) !== 0 || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
       return route.fulfill({ status: 404, body: "not found" });
     }
-    return route.fulfill({ path: file });
+    const types = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".png": "image/png" };
+    return route.fulfill({ path: file, contentType: types[path.extname(file)] || "application/octet-stream" });
   });
 }
 
 async function openApp(page, opts) {
   opts = opts || {};
   await page.clock.install({ time: new Date(NOW_ISO) });
-  if (opts.local) await serveLocal(page);
+  const origin = opts.local ? "http://localhost:8888" : "https://agenda.test";
+  await serveSite(page, origin);
   const state = await stubApi(page, opts);
-  const url = opts.local ? "http://localhost:8888/" : "file://" + path.join(PUBLIC_DIR, "index.html");
+  const url = origin + "/";
   const loaded = page.waitForResponse(function (r) { return r.url().indexOf("/api/entries") >= 0 && r.request().method() === "GET"; });
   await page.goto(url);
   await loaded;
@@ -3977,7 +3980,7 @@ replace_between(P, "  /* ---------------- API ---------------- */", "  /* ------
 
   function describeError(err, fallback) {
     if (err && err.status === 401) { onSessionLost(); return "Sua sessão expirou. Entre de novo."; }
-    if (err && (err.status === 400 || err.status === 403 || err.status === 429) && err.message) return err.message;
+    if (err && (err.status === 400 || err.status === 403 || err.status === 404 || err.status === 429) && err.message) return err.message;
     return fallback;
   }
   function onMeChanged() { render(); }
