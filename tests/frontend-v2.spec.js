@@ -666,7 +666,7 @@ test("the initial menu offers sign in or visitor access", async ({ page }) => {
   await expect(page.locator(".wrap")).toBeHidden(); // calendário só aparece depois do clique
 });
 
-test("choosing visitor closes the menu and is remembered on this device", async ({ page }) => {
+test("choosing visitor closes the menu; a reload in the same tab keeps it closed", async ({ page }) => {
   await openApp(page, { landing: true });
   await page.locator('[data-action="landing-visitor"]').click();
   await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
@@ -677,6 +677,15 @@ test("choosing visitor closes the menu and is remembered on this device", async 
   await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
 });
 
+test("opening the link in a new visit always starts on the initial screen", async ({ page }) => {
+  await openApp(page, { landing: true });
+  await page.locator('[data-action="landing-visitor"]').click();
+  await page.evaluate(function () { sessionStorage.clear(); }); // a new tab/visit starts with empty sessionStorage
+  await page.goto("https://agenda.test/?visitante=1"); // the old direct link no longer skips the screen
+  await expect(page.locator("#landingOverlay")).toHaveClass(/show/);
+  await expect(page.locator(".wrap")).toBeHidden();
+});
+
 test("choosing Entrar opens the login form", async ({ page }) => {
   await openApp(page, { landing: true });
   await page.locator('[data-action="landing-login"]').click();
@@ -684,21 +693,29 @@ test("choosing Entrar opens the login form", async ({ page }) => {
   await expect(page.locator("#loginForm")).toBeVisible();
 });
 
-test("the direct visitor link skips the menu", async ({ page }) => {
-  await openApp(page, { landing: true });
-  await page.goto("https://agenda.test/?visitante=1");
-  await page.waitForSelector("#calendarArea .day-card");
-  await page.waitForTimeout(300);
+test("a signed-in person also sees the screen and continues with one click", async ({ page }) => {
+  await openApp(page, { me: "jean", landing: true });
+  await expect(page.locator("#landingOverlay")).toHaveClass(/show/);
+  await expect(page.locator('[data-action="landing-continue"]')).toContainText("Continuar como Jean");
+  await page.locator('[data-action="landing-continue"]').click();
   await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
+  await expect(page.locator("#userBtn")).toContainText("Jean");
 });
 
-test("a signed-in person does not see the menu, and signing out brings it back", async ({ page }) => {
-  await openApp(page, { me: "jean", landing: true });
-  await page.waitForTimeout(300);
-  await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
+test("a signed-in person can pick another user from the initial screen", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", landing: true });
+  await page.locator('[data-action="landing-switch"]').click();
+  await expect(page.locator('[data-action="landing-login"]')).toBeVisible();
+  await expect(page.locator('[data-action="landing-visitor"]')).toBeVisible();
+  expect(state.me).toBe(null);
+});
+
+test("signing out brings the initial screen back", async ({ page }) => {
+  await openApp(page, { me: "jean" });
   await page.locator("#userBtn").click();
   await page.locator('#userMenu [data-action="logout"]').click();
   await expect(page.locator("#landingOverlay")).toHaveClass(/show/);
+  await expect(page.locator('[data-action="landing-login"]')).toBeVisible();
 });
 
 test("a meeting has its own comment, separate from the visit comment", async ({ page }) => {

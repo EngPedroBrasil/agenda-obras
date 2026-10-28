@@ -235,7 +235,7 @@ async function openApp(page, opts) {
   await page.clock.install({ time: new Date(NOW_ISO) });
   // The initial menu (landing) would cover the page in every test; opts.landing keeps it.
   await page.addInitScript(function (skip) {
-    if (skip) { try { localStorage.setItem("agenda-obras-visitor", "1"); } catch (e) { /* ignora */ } }
+    if (skip) { try { sessionStorage.setItem("agenda-obras-entered", "1"); } catch (e) { /* ignora */ } }
   }, !opts.landing);
   const origin = opts.local ? "http://localhost:8888" : "https://agenda.test";
   await serveSite(page, origin);

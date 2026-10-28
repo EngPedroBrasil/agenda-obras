@@ -1540,28 +1540,33 @@
 
   /* ---- initial menu: sign in or just look ---- */
   var landingOpen = false;
-  var VISITOR_KEY = "agenda-obras-visitor";
+  // The initial screen shows every time the link is opened (once per tab/visit), for everybody.
+  var VISITOR_KEY = "agenda-obras-entered";
   function visitorChosen() {
-    if (/(^|[?&])visitante(=|&|$)/.test(location.search)) return true; // direct link for the obras
-    try { return localStorage.getItem(VISITOR_KEY) === "1"; } catch (e) { return false; }
+    try { return sessionStorage.getItem(VISITOR_KEY) === "1"; } catch (e) { return false; }
   }
   function rememberVisitor(on) {
-    try { if (on) localStorage.setItem(VISITOR_KEY, "1"); else localStorage.removeItem(VISITOR_KEY); } catch (e) { /* ignora */ }
+    try { if (on) sessionStorage.setItem(VISITOR_KEY, "1"); else sessionStorage.removeItem(VISITOR_KEY); } catch (e) { /* ignora */ }
   }
   function renderLanding() {
     var overlay = document.getElementById("landingOverlay");
     var box = document.getElementById("landingModal");
     document.body.classList.toggle("landing-open", !!landingOpen);
     if (!landingOpen) { overlay.classList.remove("show"); box.innerHTML = ""; return; }
-    box.innerHTML = '<img class="landing-logo" src="assets/blendi-symbol.png" alt="Blendi">' +
-      '<h2>Agenda de Obras</h2><p class="landing-sub">Blendi Engenharia</p>' +
-      '<button type="button" class="btn btn-primary" data-action="landing-login">Entrar</button>' +
-      '<button type="button" class="btn btn-ghost" data-action="landing-visitor">Entrar como visitante</button>' +
-      '<p class="landing-hint">Visitantes veem apenas as semanas liberadas pela equipe.</p>';
+    var head = '<img class="landing-logo" src="assets/blendi-symbol.png" alt="Blendi">' +
+      '<h2>Agenda de Obras</h2><p class="landing-sub">Blendi Engenharia</p>';
+    box.innerHTML = me
+      ? head +
+        '<button type="button" class="btn btn-primary" data-action="landing-continue">Continuar como ' + h(me.name) + '</button>' +
+        '<button type="button" class="btn btn-ghost" data-action="landing-switch">Entrar com outro usu\u00e1rio</button>'
+      : head +
+        '<button type="button" class="btn btn-primary" data-action="landing-login">Entrar</button>' +
+        '<button type="button" class="btn btn-ghost" data-action="landing-visitor">Entrar como visitante</button>' +
+        '<p class="landing-hint">Visitantes veem apenas as semanas liberadas pela equipe.</p>';
     overlay.classList.add("show");
   }
   function maybeShowLanding() {
-    landingOpen = !me && !visitorChosen() && !authMode;
+    landingOpen = !visitorChosen() && !authMode;
     document.body.classList.remove("booting");
     renderLanding();
   }
@@ -1677,8 +1682,8 @@
       authMode = null;
       rememberVisitor(false);
       landingOpen = true;
-      renderLanding();
       onMeChanged();
+      renderLanding();
       showToast("Você saiu.");
     });
   }
@@ -2026,7 +2031,14 @@
     } else if (action === "set-view") {
       view = el.getAttribute("data-view");
       renderCalendar();
+    } else if (action === "landing-continue") {
+      rememberVisitor(true);
+      landingOpen = false;
+      renderLanding();
+    } else if (action === "landing-switch") {
+      doLogout();
     } else if (action === "landing-login") {
+      rememberVisitor(true);
       landingOpen = false;
       renderLanding();
       authMode = "login";
