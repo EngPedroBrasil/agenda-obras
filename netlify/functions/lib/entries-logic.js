@@ -5,6 +5,7 @@ const OBRA_IDS = ["almada", "montebello", "miraggio", "palmeiras", "tulipas", "p
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MAX_COMMENT_LENGTH = 140;
+const MAX_MANY = 60;
 
 function validateComment(value) {
   if (value === undefined || value === null) return { ok: true };
@@ -93,6 +94,43 @@ function addEntry(entries, entryWithId) {
   return entries.concat([entryWithId]);
 }
 
+function newId() {
+  return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function buildEntry(payload, id, nowIso) {
+  var entry = { id: id, date: payload.date, person: payload.person, obra: payload.obra, createdAt: nowIso };
+  var comment = normalizeComment(payload.comment);
+  if (comment) entry.comment = comment;
+  if (payload.meeting) entry.meeting = normalizeMeeting(payload.meeting);
+  return entry;
+}
+
+// All-or-nothing: every item is validated before anything is added. `affected` lists
+// only the items that really changed the data (new slot, new comment or new meeting).
+function addManyEntries(current, items, makeEntry) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { ok: false, error: "items obrigatório" };
+  }
+  if (items.length > MAX_MANY) {
+    return { ok: false, error: "máximo de " + MAX_MANY + " itens por chamada" };
+  }
+  for (var i = 0; i < items.length; i++) {
+    var check = validateEntry(items[i]);
+    if (!check.ok) return { ok: false, error: "item " + (i + 1) + ": " + check.error };
+  }
+  var result = current;
+  var affected = [];
+  items.forEach(function (item) {
+    var next = addEntry(result, makeEntry(item));
+    if (next !== result) {
+      affected.push({ person: item.person, date: item.date });
+      result = next;
+    }
+  });
+  return { ok: true, entries: result, affected: affected };
+}
+
 function removeEntry(entries, id) {
   return entries.filter(function (en) { return en.id !== id; });
 }
@@ -125,5 +163,6 @@ function updateEntryComment(entries, id, comment) {
 module.exports = {
   PEOPLE_IDS, OBRA_IDS, isRealDate,
   validateEntry, validateComment, validateMeeting, normalizeComment, normalizeMeeting,
-  addEntry, removeEntry, updateEntry, updateEntryComment
+  addEntry, addManyEntries, buildEntry, newId, MAX_MANY,
+  removeEntry, updateEntry, updateEntryComment
 };

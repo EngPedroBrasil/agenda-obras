@@ -221,3 +221,62 @@ test("updateEntry returns null for an unknown id and does not mutate its input",
   assert.equal(existing[0].comment, undefined);
   assert.equal(existing[0].meeting, undefined);
 });
+
+// --- vários dias de uma vez -----------------------------------------------
+
+test("buildEntry trims the comment, normalizes the meeting and leaves out empty fields", function () {
+  const full = logic.buildEntry({ date: "2026-08-27", person: "pedro", obra: "almada", comment: "  vistoria ", meeting: { start: "14:00", end: "15:00", extra: 1 } }, "id1", "2026-08-27T12:00:00.000Z");
+  assert.deepEqual(full, { id: "id1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "2026-08-27T12:00:00.000Z", comment: "vistoria", meeting: { start: "14:00", end: "15:00" } });
+  const bare = logic.buildEntry({ date: "2026-08-27", person: "pedro", obra: "almada", comment: "   " }, "id2", "t");
+  assert.equal("comment" in bare, false);
+  assert.equal("meeting" in bare, false);
+});
+
+function makeMaker() {
+  let n = 0;
+  return function (item) { n += 1; return logic.buildEntry(item, "m" + n, "t"); };
+}
+
+test("addManyEntries adds every item and reports only the ones that changed something", function () {
+  const current = [{ id: "a1", date: "2026-10-27", person: "pedro", obra: "almada", createdAt: "x" }];
+  const result = logic.addManyEntries(current, [
+    { date: "2026-10-27", person: "pedro", obra: "almada" },
+    { date: "2026-10-28", person: "pedro", obra: "almada" },
+    { date: "2026-10-28", person: "pedro", obra: "porto", comment: "obra" }
+  ], makeMaker());
+  assert.equal(result.ok, true);
+  assert.equal(result.entries.length, 3);
+  assert.deepEqual(result.affected, [
+    { person: "pedro", date: "2026-10-28" },
+    { person: "pedro", date: "2026-10-28" }
+  ]);
+});
+
+test("addManyEntries dedupes inside the same call", function () {
+  const result = logic.addManyEntries([], [
+    { date: "2026-10-27", person: "pedro", obra: "almada" },
+    { date: "2026-10-27", person: "pedro", obra: "almada" }
+  ], makeMaker());
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.affected.length, 1);
+});
+
+test("addManyEntries is all-or-nothing: one invalid item rejects the whole call", function () {
+  const current = [];
+  const result = logic.addManyEntries(current, [
+    { date: "2026-10-27", person: "pedro", obra: "almada" },
+    { date: "2026-02-30", person: "pedro", obra: "almada" }
+  ], makeMaker());
+  assert.equal(result.ok, false);
+  assert.match(result.error, /item 2/);
+  assert.deepEqual(current, []);
+});
+
+test("addManyEntries rejects an empty list, a non-array and more than 60 items", function () {
+  assert.equal(logic.addManyEntries([], [], makeMaker()).ok, false);
+  assert.equal(logic.addManyEntries([], "x", makeMaker()).ok, false);
+  const many = [];
+  for (let i = 0; i < 61; i++) many.push({ date: "2026-10-27", person: "pedro", obra: "almada" });
+  assert.equal(logic.addManyEntries([], many, makeMaker()).ok, false);
+  assert.equal(logic.MAX_MANY, 60);
+});
