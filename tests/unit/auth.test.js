@@ -68,7 +68,8 @@ test("first login seeds the users when none exist", async function () {
   const handler = makeHandler(store, H.OPTS);
   const res = await login(handler, "pedro", H.INITIAL);
   assert.equal(res.status, 200);
-  assert.equal(res.body.user.role, "admin");
+  assert.equal(res.body.user.role, "user");
+  assert.equal(res.body.user.canElevate, true);
   assert.equal(Object.keys(store.data.users).length, 5);
 });
 

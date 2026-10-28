@@ -2,7 +2,7 @@
 
 const { signSession } = require("../../../netlify/functions/lib/session");
 const { seedUsers } = require("../../../netlify/functions/lib/users-logic");
-const { PEOPLE, ADMIN_IDS } = require("../../../netlify/functions/lib/people");
+const { PEOPLE, ADMIN_IDS, MANAGERS } = require("../../../netlify/functions/lib/people");
 const { makeFakeStore } = require("./fake-store");
 
 const SECRET = "s".repeat(32);
@@ -12,7 +12,7 @@ const OPTS = { env: { SESSION_SECRET: SECRET, INITIAL_PASSWORD: INITIAL }, now: 
 
 let seeded = null;
 function seededUsers() {
-  if (!seeded) seeded = seedUsers(INITIAL, PEOPLE, ADMIN_IDS);
+  if (!seeded) seeded = seedUsers(INITIAL, PEOPLE, ADMIN_IDS, MANAGERS);
   return JSON.parse(JSON.stringify(seeded));
 }
 
@@ -20,6 +20,8 @@ function seededUsers() {
 function readyUsers() {
   const users = seededUsers();
   Object.keys(users).forEach(function (id) { users[id].mustChange = false; });
+  // O administrador vira "comum" fora do modo administrador; nos testes ele já começa com o modo ligado.
+  users.pedro.elevatedUntil = NOW + 60 * 60 * 1000;
   return users;
 }
 

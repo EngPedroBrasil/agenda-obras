@@ -22,8 +22,8 @@ test("seedUsers creates the five people with the initial password, pedro as admi
   assert.notEqual(users.pedro.hash, users.jean.hash);
 });
 
-test("publicUser exposes only id, name, role and mustChange", function () {
-  assert.deepEqual(U.publicUser(fresh().pedro), { id: "pedro", name: "Pedro", role: "admin", mustChange: true });
+test("publicUser exposes only id, name, role and mustChange (plus canElevate/elevatedUntil for the admin)", function () {
+  assert.deepEqual(U.publicUser(fresh().pedro, 1), { id: "pedro", name: "Pedro", role: "user", mustChange: true, canElevate: true, elevatedUntil: 0 });
 });
 
 test("authenticate succeeds with the right password and clears the failure counter", function () {

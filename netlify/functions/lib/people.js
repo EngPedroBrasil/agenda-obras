@@ -11,4 +11,10 @@ const PEOPLE = [
 
 const ADMIN_IDS = ["pedro"];
 
-module.exports = { PEOPLE, ADMIN_IDS };
+// Gestores: entram com login, acompanham tudo (só leitura) e mandam avisos.
+// Não são "pessoas" da agenda: não marcam presença e não contam na semana liberada.
+const MANAGERS = [
+  { id: "leonardo", name: "Leonardo", role: "Gestor" }
+];
+
+module.exports = { PEOPLE, ADMIN_IDS, MANAGERS };
