@@ -1772,3 +1772,170 @@ EOF
 ```
 
 Roda tudo no navegador na nuvem (os arquivos de `public/` e `tests/` são copiados para lá; veja o roteiro de execução na Task 9).
+
+
+### Task 8: Documentação e versão 2.1.0
+
+**Files:**
+- Modify: `README.md`
+- Modify: `package.json` (e `package-lock.json`): versão `2.1.0`
+- Create: `docs/RELEASE-v2.1.md`
+
+**Interfaces:**
+- Consumes: tudo das Tasks 1–7 (só descreve).
+- Produces: roteiro de lançamento e rollback da 2.1, usado na Task 9.
+
+- [ ] **Step 1: Atualizar o README e a versão**
+
+```bash
+python3 - <<'PY'
+import sys; sys.path.insert(0, ".git")
+from patchlib import patch
+
+patch("README.md", [
+("O administrador (Pedro) altera qualquer pessoa, zera senhas e cuida dos backups.",
+ "O administrador (Pedro) começa como pessoa comum e liga o **modo administrador** (vale 15 minutos) para alterar qualquer pessoa, zerar senhas e cuidar dos backups. O gestor (Leonardo) acompanha tudo em modo leitura e envia avisos à equipe."),
+("  - **Administração** (só Pedro): zerar senha de alguém, baixar backup em JSON e restaurar um backup.",
+ """  - **Administração** (só Pedro, com o modo administrador ligado): zerar senha de alguém (inclusive do Leonardo), baixar backup em JSON e restaurar um backup.
+  - **Modo administrador** (só Pedro): item no menu do nome. Liga uma barra vermelha com a hora em que volta ao comum; desliga sozinho em 15 minutos, ao sair ou ao trocar a senha. Fora dele, o Pedro marca só o próprio nome, não abre a Administração e não envia avisos.
+  - **Gestor** (Leonardo): vê tudo, inclusive semanas ainda não liberadas, Mês, Atenção e Gerar mensagem, mas não marca presença nem fecha semana. Não conta nas cinco pessoas da "semana liberada".
+  - **Notificações** (sino no topo): o gestor (e o Pedro, no modo administrador) escreve um aviso de até 500 caracteres para uma ou mais pessoas; cada pessoa vê só os dela e marca **Li**; quem enviou vê "Lido em…" ou "Não lido". Sem respostas; avisos lidos há mais de 60 dias são apagados."""),
+("  - `auth.js` — `GET` devolve o usuário da sessão; `POST` com `login`, `logout`, `changePassword`.\n  - `admin.js` — só administrador: `resetPassword`, `listBackups`, `downloadBackup`, `restoreBackup`.",
+ "  - `auth.js` — `GET` devolve o usuário da sessão; `POST` com `login`, `logout`, `changePassword`, `elevate` e `unelevate` (modo administrador).\n  - `admin.js` — só administrador **com o modo ligado**: `resetPassword`, `listBackups`, `downloadBackup`, `restoreBackup`.\n  - `notices.js` — `GET /api/notices` devolve `{inbox, sent, canSend}`; `POST` com `send` (gestor, ou Pedro no modo administrador) e `markRead` (só o destinatário)."),
+("- Backup automático: a primeira gravação",
+ "- O servidor decide tudo pelo **papel efetivo**: o administrador fora do modo administrador vale como pessoa comum (`elevatedUntil` fica no cadastro dele). O gestor só lê. Os avisos ficam na chave `notices` e não entram nos backups.\n- Backup automático: a primeira gravação"),
+("Por isso o trabalho em lote fica numa branch (`release/v2`) e vai para produção **uma única vez**. O passo a passo completo, com cópia de segurança antes e volta atrás (rollback), está em [`docs/RELEASE-v2.md`](docs/RELEASE-v2.md).",
+ "Por isso o trabalho em lote fica numa branch e vai para produção **uma única vez**. O passo a passo completo, com cópia de segurança antes e volta atrás (rollback), está em [`docs/RELEASE-v2.md`](docs/RELEASE-v2.md) (versão 2.0) e [`docs/RELEASE-v2.1.md`](docs/RELEASE-v2.1.md) (gestor, avisos e modo administrador)."),
+("netlify/functions/admin.js        administração (senha, backups)",
+ "netlify/functions/admin.js        administração (senha, backups)\nnetlify/functions/notices.js      quadro de notificações"),
+("docs/RELEASE-v2.md                roteiro de lançamento e rollback",
+ "docs/RELEASE-v2.md                roteiro de lançamento e rollback da 2.0\ndocs/RELEASE-v2.1.md              roteiro de lançamento e rollback da 2.1"),
+])
+PY
+npm version 2.1.0 --no-git-tag-version 2>&1 | tail -2; grep -n '"version"' package.json | head -1
+```
+
+- [ ] **Step 2: Criar o roteiro da 2.1**
+
+```bash
+cat > docs/RELEASE-v2.1.md <<'EOF'
+# Lançamento da 2.1 e volta atrás
+
+A 2.1 acrescenta o **gestor** (Leonardo), o **quadro de notificações** e o **modo administrador** do Pedro. Está na branch `feature/gestor-modo-admin`, que parte da 2.0 já publicada. Produção só muda quando você enviar a branch para `main`: **um único deploy (15 créditos)**.
+
+Comandos no PowerShell, dentro da pasta do repositório. **Não use `git switch`** (o OneDrive atrapalha a troca de branch): o roteiro abaixo evita isso.
+
+## 0. O que você precisa ter à mão
+
+- O endereço do site: `https://agenda-obras.netlify.app`.
+- Acesso ao painel do Netlify (lista de deploys).
+- Nada novo de variáveis de ambiente: o Leonardo usa a mesma `INITIAL_PASSWORD` das outras pessoas e é criado sozinho na primeira requisição depois do deploy.
+
+## 1. Cópia de segurança dos dados de hoje (fora do Netlify)
+
+~~~powershell
+curl.exe -L -o "$HOME\Desktop\agenda-backup-antes-do-v2.1.json" "https://agenda-obras.netlify.app/api/entries"
+~~~
+
+Guarde fora da pasta do repositório. (Entram marcações e semanas; senhas e avisos não entram em cópia nenhuma.)
+
+## 2. Testar no seu computador (sem tocar na produção)
+
+A cópia local já está na branch `feature/gestor-modo-admin`.
+
+~~~powershell
+git branch --show-current
+npm install
+npm test
+Copy-Item .env.example .env       # se ainda não existir; SESSION_SECRET e INITIAL_PASSWORD
+npx netlify-cli dev --offline
+~~~
+
+Abra `http://localhost:8888` e use **Ctrl+F5**. Roteiro:
+
+1. Entre como **Pedro** (senha inicial → trocar, se pedir). Ele aparece como pessoa comum: sem barra vermelha e, no menu do nome, só *Modo administrador*, *Trocar senha*, *Sair*.
+2. Abra um dia: o Pedro só marca o próprio nome. Em *Modo administrador* a barra vermelha aparece com a hora em que volta ao comum; agora o dia mostra "Marcando como" com todos e o menu ganha *Administração*. *Desligar* na barra volta ao comum.
+3. Com o modo ligado, abra *Administração* → zere a senha do **Leonardo**.
+4. Saia e entre como **Leonardo** (senha inicial → trocar). Ele vê todas as semanas (mesmo não liberadas), Mês, Atenção e Gerar mensagem; o dia mostra "modo leitura"; os botões de *Semana programada?* ficam desativados.
+5. Ainda como Leonardo, clique no **sino** → *Escrever*: marque duas pessoas (ou *Todos*), escreva e envie. Em *Enviadas* aparece "Não lido".
+6. Saia e entre como uma das pessoas: o sino mostra o número de avisos novos; só o aviso dela aparece; clique **Li**. Volte como Leonardo: *Enviadas* mostra "Lido em dd/mm às HH:MM" (a tela atualiza sozinha em até 25 segundos).
+7. Como Pedro **fora** do modo administrador: o sino abre só *Recebidas* (sem *Escrever*).
+8. Como visitante (*Entrar como visitante*): não há sino.
+
+## 3. Enviar a branch e marcar a versão anterior (não publica nada)
+
+Confira em *Site configuration → Build & deploy → Branches and deploy contexts* que **Branch deploys** está em *None*.
+
+~~~powershell
+git tag v2.0 77f67a4
+git push origin v2.0
+git push origin feature/gestor-modo-admin
+~~~
+
+## 4. Publicar em produção (15 créditos, uma vez só)
+
+Sem trocar de branch:
+
+~~~powershell
+git push origin feature/gestor-modo-admin:main
+~~~
+
+O Netlify faz o deploy sozinho. Espere ficar *Published*.
+
+## 5. Conferir depois do deploy
+
+1. O site abre e mostra as marcações de antes.
+2. Entre como Pedro: ele começa **sem** a barra vermelha. Ligue o *Modo administrador*, abra *Administração* e confira a lista com 6 pessoas (inclui Leonardo).
+3. Entre como **Leonardo** com a senha inicial: o site pede para trocar; depois ele vê a agenda em modo leitura.
+4. Envie um aviso de teste do Leonardo para o Pedro; entre como Pedro, leia e marque **Li**.
+5. Avise a equipe e o Leonardo (use os Release Notes da 2.1).
+
+## 6. Se algo der errado: voltar para a 2.0
+
+**Código (rápido, sem gastar crédito de build):** Netlify → *Deploys* → abra o deploy da 2.0 (o último antes desta publicação) → **Publish deploy**.
+
+Os dados continuam compatíveis: a 2.0 ignora o Leonardo, o campo `elevatedUntil` e a chave `notices`. Na 2.0 o Pedro volta a ser administrador o tempo todo.
+
+**Dados:** se alguma marcação for apagada por engano, entre como Pedro, ligue o *Modo administrador* → *Administração* → *Restaurar* o backup do dia anterior. O arquivo do passo 1 é a cópia de fora do Netlify.
+
+## 7. Perguntas comuns
+
+- **O Leonardo esqueceu a senha:** o Pedro liga o modo administrador e zera em *Administração*.
+- **O Pedro tentou usar a Administração e deu "ligue o modo administrador":** é de propósito. Menu do nome → *Modo administrador*.
+- **A barra vermelha sumiu sozinha:** passaram os 15 minutos (ou ele saiu/trocou a senha). Ligue de novo.
+- **O Leonardo não consegue marcar presença:** é de propósito, ele acompanha. Quem marca é a equipe.
+- **Aviso enviado para a pessoa errada:** não há como apagar; mande outro aviso.
+EOF
+```
+
+- [ ] **Step 3: Commit**
+
+Run (prefixo): `ga README.md package.json package-lock.json docs && gc "docs: README e roteiro de lançamento da 2.1; versão 2.1.0"`
+
+---
+
+### Task 9: Verificação final
+
+**Files:** nenhum arquivo novo (só conferência).
+
+- [ ] **Step 1: Rodar tudo**
+
+```bash
+node --test tests/unit/*.test.js 2>&1 | grep -E "^# (tests|pass|fail)"
+git status --short | head
+git log --oneline | head -12
+```
+
+Expected: `# fail 0`, árvore limpa (a não ser pelo `.env` ignorado), commits da 2.1 na ordem. Na nuvem: copiar `public/` e `tests/` e rodar `/tmp/runpw.sh` (Playwright) — esperado: tudo verde.
+
+- [ ] **Step 2: Conferir contra a spec**
+
+| Spec | Onde está |
+|---|---|
+| Gestor lê tudo, não marca nem fecha semana, não conta nas 5 | Tasks 1, 3, 5 |
+| Modo administrador 15 min, barra vermelha, desliga ao sair/trocar senha/vencer | Tasks 1, 2, 5 |
+| Pedro comum: só o próprio, sem Administração, sem avisos | Tasks 3, 4, 5, 6 |
+| Quadro: enviar a 1–5 pessoas, 500 caracteres, privado, Li, Enviadas lido/não lido | Tasks 4, 6 |
+| Limpeza de lidas > 60 dias e teto de 500 | Task 4 |
+| Fora do backup | Task 4 (nota) |
+| Versão 2.1.0, README, roteiro, Release Notes | Task 8 e entrega final |
