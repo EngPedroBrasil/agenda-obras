@@ -121,3 +121,16 @@ test("PEOPLE_IDS and OBRA_IDS have the expected fixed values", function () {
   assert.deepEqual(PEOPLE_IDS, ["pedro", "jean", "haniel", "gustavo", "bruna"]);
   assert.deepEqual(OBRA_IDS, ["almada", "montebello", "miraggio", "palmeiras", "tulipas", "porto"]);
 });
+
+// --- datas reais do calendário -----------------------------------------
+
+test("validateEntry rejects dates that do not exist on the calendar", function () {
+  ["2026-99-99", "2026-02-30", "2026-13-01", "2026-00-10", "2026-04-31", "2026-02-29"].forEach(function (date) {
+    assert.equal(validateEntry({ date: date, person: "pedro", obra: "almada" }).ok, false, date);
+  });
+});
+
+test("validateEntry accepts 29 February in a leap year and the last day of a month", function () {
+  assert.equal(validateEntry({ date: "2028-02-29", person: "pedro", obra: "almada" }).ok, true);
+  assert.equal(validateEntry({ date: "2026-10-31", person: "pedro", obra: "almada" }).ok, true);
+});

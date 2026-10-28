@@ -20,11 +20,18 @@ function normalizeComment(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isRealDate(key) {
+  if (typeof key !== "string" || !DATE_RE.test(key)) return false;
+  var p = key.split("-").map(Number);
+  var d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+  return d.getUTCFullYear() === p[0] && d.getUTCMonth() === p[1] - 1 && d.getUTCDate() === p[2];
+}
+
 function validateEntry(input) {
   if (!input || typeof input !== "object") {
     return { ok: false, error: "corpo inválido" };
   }
-  if (typeof input.date !== "string" || !DATE_RE.test(input.date)) {
+  if (!isRealDate(input.date)) {
     return { ok: false, error: "data inválida (esperado AAAA-MM-DD)" };
   }
   if (!PEOPLE_IDS.includes(input.person)) {
@@ -64,7 +71,7 @@ function updateEntryComment(entries, id, comment) {
 }
 
 module.exports = {
-  PEOPLE_IDS, OBRA_IDS,
+  PEOPLE_IDS, OBRA_IDS, isRealDate,
   validateEntry, validateComment, normalizeComment,
   addEntry, removeEntry, updateEntryComment
 };
