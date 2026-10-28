@@ -2,6 +2,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <title>Agenda de Obras</title>
+<link rel="icon" type="image/png" href="assets/favicon.png">
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <style>
   :root {
     --bg: #f7f8f4;
@@ -744,6 +746,11 @@
   }
   .notice-panel[hidden] { display: none; }
   .notice-panel h2 { font-size: 18px; margin: 0; }
+  .notice-panel .modal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .notice-panel .close-x {
+    border: none; background: var(--surface-2); color: var(--ink-soft);
+    width: 28px; height: 28px; border-radius: 50%; cursor: pointer; font-size: 15px; flex: none;
+  }
   .notice-tabs { display: flex; gap: 6px; margin: 10px 0 14px; }
   .notice-tabs .btn-mini.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
   .notice-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; background: var(--surface-2); }

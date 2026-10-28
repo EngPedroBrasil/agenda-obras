@@ -12,6 +12,35 @@ async function loginAs(page, user, password) {
   await page.locator("#authSubmit").click();
 }
 
+// ---- Aparência ------------------------------------------------------------------------------
+
+test("the tab icon is the Blendi symbol", async ({ page }) => {
+  await openApp(page, {});
+  await expect(page.locator('link[rel="icon"]')).toHaveAttribute("href", "assets/favicon.png");
+  await expect(page.locator('link[rel="apple-touch-icon"]')).toHaveAttribute("href", "assets/apple-touch-icon.png");
+});
+
+for (const scheme of ["light", "dark"]) {
+  test("the close button of the notice panel looks like the other modals in " + scheme + " mode", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: scheme });
+    await openApp(page, { me: "jean" });
+    await page.locator("#noticeBtn").click();
+    const x = page.locator("#noticePanel .close-x");
+    await expect(x).toHaveCSS("border-radius", "50%");
+    await expect(x).toHaveCSS("width", "28px");
+    const bg = await x.evaluate(function (el) { return getComputedStyle(el).backgroundColor; });
+    const surface2 = await page.evaluate(function () {
+      const probe = document.createElement("div");
+      probe.style.background = "var(--surface-2)";
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).backgroundColor;
+      probe.remove();
+      return c;
+    });
+    expect(bg).toBe(surface2);
+  });
+}
+
 // ---- Gestor --------------------------------------------------------------------------------
 
 test("Leonardo is in the login list, and the filters/week strip still list only the five", async ({ page }) => {
