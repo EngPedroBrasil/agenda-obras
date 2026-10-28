@@ -9,6 +9,8 @@ const PUBLIC_DIR = path.join(__dirname, "..", "..", "public");
 const NOW_ISO = "2026-10-27T12:00:00-03:00";
 const SERVER_NOW = "2026-10-27T15:00:00.000Z";
 const PEOPLE = { pedro: "Pedro", jean: "Jean", haniel: "Haniel", gustavo: "Gustavo", bruna: "Bruna" };
+const MANAGERS = { leonardo: "Leonardo" };
+const NAMES = Object.assign({}, PEOPLE, MANAGERS);
 const INITIAL_PASSWORD = "Mudar@123";
 
 function weekKeyOf(dateKey) {
@@ -48,8 +50,16 @@ function releasedAround() {
   return out;
 }
 
+// Mesmas regras do servidor: o administrador só é "admin" com o modo ligado; o gestor é "manager".
 function userRecord(state, id) {
-  return { id: id, name: PEOPLE[id], role: id === "pedro" ? "admin" : "user", mustChange: state.mustChange.indexOf(id) >= 0 };
+  const rec = { id: id, name: NAMES[id], role: MANAGERS[id] ? "manager" : "user", mustChange: state.mustChange.indexOf(id) >= 0 };
+  if (id === "pedro") {
+    const on = state.elevatedUntil > state.serverNow;
+    rec.role = on ? "admin" : "user";
+    rec.canElevate = true;
+    rec.elevatedUntil = on ? state.elevatedUntil : 0;
+  }
+  return rec;
 }
 
 function mayAct(state, person) {
@@ -99,8 +109,16 @@ async function stubApi(page, opts) {
     resetUsers: [],
     restored: null,
     seq: 0,
-    failNext: null
+    failNext: null,
+    serverNow: Date.parse(SERVER_NOW),
+    elevatedUntil: opts.common ? 0 : Date.parse(SERVER_NOW) + 60 * 60 * 1000,
+    notices: JSON.parse(JSON.stringify(opts.notices || []))
   };
+  // state.me é recalculado a cada leitura: o modo administrador vence sozinho quando serverNow avança.
+  Object.defineProperty(state, "me", {
+    get: function () { return this._me ? userRecord(this, this._me.id) : null; },
+    set: function (v) { this._me = v; }
+  });
   if (opts.me) state.me = userRecord(state, opts.me);
 
   await page.route(/fonts\.(googleapis|gstatic)\.com/, function (route) { return route.abort(); });
@@ -116,6 +134,7 @@ async function stubApi(page, opts) {
     if (state.failNext) { const f = state.failNext; state.failNext = null; return json(route, f.status, { error: f.error || "erro simulado" }); }
     if (!state.me) return json(route, 401, { error: "faça login para alterar a agenda" });
     if (state.me.mustChange) return json(route, 403, { error: "troque a senha antes de alterar a agenda" });
+    if (state.me.role === "manager") return json(route, 403, { error: "o gestor acompanha a agenda, mas não altera marcações" });
     const deny = function () { return json(route, 403, { error: "você só pode alterar as suas próprias marcações" }); };
     const ok = function () { return json(route, 200, { entries: state.entries, confirmations: state.confirmations }); };
 
@@ -165,11 +184,11 @@ async function stubApi(page, opts) {
     if (p.op === "login") {
       const id = String(p.user || "").trim().toLowerCase();
       const expected = state.passwords[id] || INITIAL_PASSWORD;
-      if (!PEOPLE[id] || p.password !== expected) return json(route, 401, { error: "usuário ou senha inválidos" });
+      if (!NAMES[id] || p.password !== expected) return json(route, 401, { error: "usuário ou senha inválidos" });
       state.me = userRecord(state, id);
       return json(route, 200, { user: state.me });
     }
-    if (p.op === "logout") { state.me = null; return json(route, 200, { ok: true }); }
+    if (p.op === "logout") { state.me = null; state.elevatedUntil = 0; return json(route, 200, { ok: true }); }
     if (p.op === "changePassword") {
       if (!state.me) return json(route, 401, { error: "faça login primeiro" });
       const current = state.passwords[state.me.id] || INITIAL_PASSWORD;
@@ -181,6 +200,16 @@ async function stubApi(page, opts) {
       state.me = userRecord(state, state.me.id);
       return json(route, 200, { user: state.me });
     }
+    if (p.op === "elevate" || p.op === "unelevate") {
+      if (!state.me) return json(route, 401, { error: "faça login primeiro" });
+      if (state.me.id !== "pedro") {
+        return p.op === "unelevate"
+          ? json(route, 200, { user: state.me })
+          : json(route, 403, { error: "apenas o administrador pode ligar o modo administrador" });
+      }
+      state.elevatedUntil = p.op === "elevate" ? state.serverNow + 15 * 60 * 1000 : 0;
+      return json(route, 200, { user: state.me });
+    }
     return json(route, 400, { error: "op inválida" });
   });
 
@@ -188,12 +217,14 @@ async function stubApi(page, opts) {
     const p = route.request().postDataJSON();
     state.requests.push({ path: "/api/admin", body: p });
     if (!state.me) return json(route, 401, { error: "faça login" });
-    if (state.me.role !== "admin") return json(route, 403, { error: "apenas o administrador" });
+    if (state.me.role !== "admin") {
+      return json(route, 403, { error: state.me.canElevate ? "ligue o modo administrador para usar esta função" : "apenas o administrador" });
+    }
     if (p.op === "resetPassword") {
       state.resetUsers.push(p.user);
       state.passwords[p.user] = INITIAL_PASSWORD;
       if (state.mustChange.indexOf(p.user) < 0) state.mustChange.push(p.user);
-      return json(route, 200, { user: { id: p.user, name: PEOPLE[p.user], role: "user", mustChange: true } });
+      return json(route, 200, { user: { id: p.user, name: NAMES[p.user], role: MANAGERS[p.user] ? "manager" : "user", mustChange: true } });
     }
     if (p.op === "listBackups") {
       return json(route, 200, { backups: state.backups.map(function (b) { return { id: b.id, kind: b.kind, label: b.label }; }) });
@@ -207,6 +238,42 @@ async function stubApi(page, opts) {
       state.entries = JSON.parse(JSON.stringify(backup.entries || []));
       state.confirmations = JSON.parse(JSON.stringify(backup.weeks || {}));
       state.restored = p.id;
+      return json(route, 200, { ok: true });
+    }
+    return json(route, 400, { error: "op inválida" });
+  });
+
+  await page.route("**/api/notices", async function (route) {
+    const req = route.request();
+    if (!state.me) return json(route, 401, { error: "faça login" });
+    if (state.me.mustChange) return json(route, 403, { error: "troque a senha antes de continuar" });
+    const me = state.me;
+    const canSend = me.role === "admin" || me.role === "manager";
+    if (req.method() === "GET") {
+      return json(route, 200, {
+        inbox: state.notices.filter(function (n) { return n.to === me.id; }).reverse(),
+        sent: state.notices.filter(function (n) { return n.from === me.id; }).reverse(),
+        canSend: canSend
+      });
+    }
+    const p = req.postDataJSON();
+    state.requests.push({ path: "/api/notices", body: p });
+    const nowIso = new Date(state.serverNow).toISOString();
+    if (p.op === "send") {
+      if (!canSend) {
+        return json(route, 403, { error: me.canElevate ? "ligue o modo administrador para enviar notificações" : "apenas o gestor e o administrador enviam notificações" });
+      }
+      const text = String(p.text || "").trim();
+      if (!text || !Array.isArray(p.to) || !p.to.length) return json(route, 400, { error: "escreva a mensagem" });
+      p.to.forEach(function (to) {
+        state.notices.push({ id: "z" + (++state.seq), from: me.id, to: to, text: text, createdAt: nowIso, readAt: null });
+      });
+      return json(route, 200, { ok: true, sent: p.to.length });
+    }
+    if (p.op === "markRead") {
+      const found = state.notices.filter(function (n) { return n.id === p.id && n.to === me.id; })[0];
+      if (!found) return json(route, 404, { error: "aviso não encontrado" });
+      if (!found.readAt) found.readAt = nowIso;
       return json(route, 200, { ok: true });
     }
     return json(route, 400, { error: "op inválida" });

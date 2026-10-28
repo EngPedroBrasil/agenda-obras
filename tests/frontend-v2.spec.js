@@ -583,7 +583,7 @@ test("the panel lists the people (no reset for yourself) and the backups", async
   await page.locator("#userBtn").click();
   await page.locator('[data-action="open-admin"]').click();
   await expect(page.locator("#adminPanel")).toBeVisible();
-  await expect(page.locator(".admin-user")).toHaveCount(5);
+  await expect(page.locator(".admin-user")).toHaveCount(6);
   await expect(page.locator('.admin-user[data-user="pedro"] [data-action="admin-reset"]')).toHaveCount(0);
   await expect(page.locator('.admin-user[data-user="jean"] [data-action="admin-reset"]')).toHaveCount(1);
   await expect(page.locator(".admin-backup")).toHaveCount(2);
