@@ -447,6 +447,17 @@
   .day-chip.on { border-color: var(--accent); background: var(--accent-soft); }
   .day-chip.origin { box-shadow: inset 0 -3px 0 var(--accent); }
   .days-count { margin: 6px 0 0; font-size: 12px; color: var(--ink-faint); }
+  .week-strip { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; margin: 0 0 10px; font-size: 13px; }
+  .week-strip .wk-label { font-weight: 700; color: var(--ink-soft); margin-right: 2px; }
+  .wk-btn {
+    border: 1.5px solid var(--border); background: var(--surface); color: var(--ink-soft); border-radius: 999px;
+    padding: 5px 11px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
+  }
+  .wk-btn.done { border-color: #2e9e5b; background: rgba(46, 158, 91, 0.14); color: var(--ink); }
+  .wk-count { margin-left: auto; font-size: 12.5px; color: var(--ink-faint); }
+  .wa-banner { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; }
+  .wa-banner.ok { background: rgba(46, 158, 91, 0.16); color: var(--ink); }
+  .wa-banner.warn { background: rgba(230, 160, 30, 0.2); color: var(--ink); }
   .add-row {
     border: 1.5px dashed var(--border);
     background: transparent;
@@ -833,9 +844,31 @@
   }
   function loadState() { return apiRequest("GET", "/api/entries").then(normalizeState); }
   function applyState(state) { entries = state.entries; confirmations = state.confirmations; }
+  var pendingReopen = [];   // nomes cujas semanas fechadas o servidor reabriu na última gravação
+  function reopenedNames(before, after) {
+    var names = [];
+    Object.keys(before).forEach(function (week) {
+      Object.keys(before[week]).forEach(function (pid) {
+        var still = after[week] && after[week][pid];
+        if (!still && personById[pid] && names.indexOf(personById[pid].name) < 0) names.push(personById[pid].name);
+      });
+    });
+    return names;
+  }
+  // Text to append to the toast of the last write; reads and clears the pending notice.
+  function reopenNote() {
+    if (!pendingReopen.length) return "";
+    var text = pendingReopen.length === 1
+      ? " Semana de " + pendingReopen[0] + " reaberta, feche de novo quando terminar."
+      : " Semanas de " + pendingReopen.join(", ") + " reabertas, feche de novo quando terminar.";
+    pendingReopen = [];
+    return text;
+  }
   function entriesOp(payload) {
+    var before = confirmations;
     return apiRequest("POST", "/api/entries", payload).then(function (data) {
       applyState(normalizeState(data));
+      pendingReopen = payload.op === "confirmWeek" || payload.op === "unconfirmWeek" ? [] : reopenedNames(before, confirmations);
       return data;
     });
   }
@@ -1134,7 +1167,7 @@
         "</div>"
       );
     }
-    return '<div class="week-scroll"><div class="week-grid">' + cells.join("") + "</div></div>";
+    return weekStripHTML(start) + '<div class="week-scroll"><div class="week-grid">' + cells.join("") + "</div></div>";
   }
 
   function renderMonth() {
@@ -1368,7 +1401,7 @@
       modalWeekStart = startOfWeek(parseKey(modalDateKey));
       renderModal();
       renderCalendar();
-      showToast(items.length === 1 ? "1 marcação adicionada." : items.length + " marcações adicionadas.");
+      showToast((items.length === 1 ? "1 marcação adicionada." : items.length + " marcações adicionadas.") + reopenNote());
     }).catch(function (err) {
       showToast(describeError(err, "Não foi possível salvar agora. Tente de novo."));
       btn.disabled = false;
@@ -1557,6 +1590,7 @@
       applyState(state);
       renderCalendar();
       refreshModalList();
+      refreshWaBanner();
     }).catch(function () { /* silent — tenta de novo no próximo ciclo */ });
   }
   setInterval(pollForUpdates, 25000);
@@ -1650,6 +1684,56 @@
     });
   }
 
+  /* ---------------- semana programada ---------------- */
+  function weekKeyOfCursor() { return dateKey(startOfWeek(cursor)); }
+
+  // "27/10 às 12:00" in São Paulo time, whatever the browser time zone.
+  function formatClosedAt(iso) {
+    var parts = {};
+    new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(iso)).forEach(function (p) { parts[p.type] = p.value; });
+    return parts.day + "/" + parts.month + " às " + parts.hour + ":" + parts.minute;
+  }
+
+  function weekStripHTML(start) {
+    var conf = confirmations[dateKey(start)] || {};
+    var done = 0;
+    var buttons = TEAM.map(function (p) {
+      var at = conf[p.id];
+      if (at) done++;
+      return '<button type="button" class="wk-btn' + (at ? " done" : "") + '" data-action="toggle-week" data-person="' + p.id + '" aria-pressed="' + !!at + '" ' +
+        'title="' + (at ? "Fechada em " + formatClosedAt(at) : "Ainda não programou a semana") + '">' + (at ? "&#10003; " : "&#9675; ") + h(p.name) + "</button>";
+    }).join("");
+    return '<div class="week-strip"><span class="wk-label">Semana programada</span>' + buttons +
+      '<span class="wk-count">' + done + " de " + TEAM.length + " programadas</span></div>";
+  }
+
+  function toggleWeek(pid) {
+    if (!me) { authMode = "login"; renderAuthModal(); showToast("Entre para fechar a sua semana."); return; }
+    if (me.mustChange) { authMode = "change"; renderAuthModal(); return; }
+    if (!canEditPerson(pid)) { showToast("Você só pode fechar a sua própria semana."); return; }
+    var key = weekKeyOfCursor();
+    var closed = !!(confirmations[key] && confirmations[key][pid]);
+    submitWeek(closed ? "unconfirmWeek" : "confirmWeek", key, pid).then(function () {
+      renderCalendar();
+      showToast("Semana de " + personById[pid].name + (closed ? " reaberta." : " fechada."));
+    }).catch(function (err) {
+      showToast(describeError(err, "Não foi possível salvar agora. Tente de novo."));
+    });
+  }
+
+  function waBannerHTML() {
+    var conf = confirmations[weekKeyOfCursor()] || {};
+    var missing = TEAM.filter(function (p) { return !conf[p.id]; });
+    if (!missing.length) return '<div class="wa-banner ok" id="waBanner">&#10003; Todos programaram a semana.</div>';
+    return '<div class="wa-banner warn" id="waBanner">Faltam: ' + missing.map(function (p) { return h(p.name); }).join(", ") + ".</div>";
+  }
+  function refreshWaBanner() {
+    if (!waModalOpen) return;
+    var el = document.getElementById("waBanner");
+    if (el) el.outerHTML = waBannerHTML();
+  }
+
   function renderWaModal() {
     var overlay = document.getElementById("waOverlay");
     if (!waModalOpen) {
@@ -1663,6 +1747,7 @@
     var waLink = "https://wa.me/?text=" + encodeURIComponent(message);
     document.getElementById("waModal").innerHTML =
       '<div class="modal-head"><div><h2>Mensagem da semana</h2></div><button class="close-x" data-action="close-wa-modal" aria-label="Fechar">&times;</button></div>' +
+      waBannerHTML() +
       '<p class="modal-sub">Confira o texto, edite se quiser, e copie ou abra direto no WhatsApp.</p>' +
       '<textarea class="wa-textarea" id="waText">' + h(message) + '</textarea>' +
       '<div class="wa-actions">' +
@@ -1722,6 +1807,8 @@
     } else if (action === "logout") {
       userMenuOpen = false;
       doLogout();
+    } else if (action === "toggle-week") {
+      toggleWeek(el.getAttribute("data-person"));
     } else if (action === "set-att-period") {
       attentionPeriod = el.getAttribute("data-period");
       renderCalendar();
@@ -1757,7 +1844,7 @@
       submitRemove(id).then(function () {
         paintModalList();
         renderCalendar();
-        showToast("Presença removida.");
+        showToast("Presença removida." + reopenNote());
       }).catch(function (err) {
         showToast(describeError(err, "Não foi possível remover agora. Tente de novo."));
       });
@@ -1818,7 +1905,7 @@
       editingEntryId = null;
       paintModalList();
       renderCalendar();
-      showToast("Comentário salvo.");
+      showToast("Comentário salvo." + reopenNote());
     }).catch(function (err) {
       if (err && err.status === 404) {
         editingEntryId = null;

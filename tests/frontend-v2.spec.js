@@ -399,3 +399,99 @@ test("background refresh does not touch an open edit form", async ({ page }) => 
   await expect(page.locator('.day-card[data-date="' + DAY + '"] .entry-chip')).toHaveCount(3);
   await expect(page.locator('.comment-edit input[name="comment"]')).toHaveValue("rascunho");
 });
+
+// ---- Tarefa 24: semana programada ------------------------------------------------------------
+
+const WEEK = "2026-10-25"; // domingo da semana de 27/10/2026
+const CLOSED_AT = "2026-10-27T15:00:00.000Z"; // 12:00 em São Paulo
+
+test("the strip shows who already closed the week, with the closing time", async ({ page }) => {
+  await openApp(page, { confirmations: { [WEEK]: { jean: CLOSED_AT } } });
+  await expect(page.locator(".week-strip .wk-btn")).toHaveCount(5);
+  await expect(page.locator(".wk-count")).toHaveText("1 de 5 programadas");
+  const jean = page.locator('.wk-btn[data-person="jean"]');
+  await expect(jean).toHaveClass(/done/);
+  await expect(jean).toContainText("✓");
+  await expect(jean).toHaveAttribute("title", "Fechada em 27/10 às 12:00");
+  const haniel = page.locator('.wk-btn[data-person="haniel"]');
+  await expect(haniel).not.toHaveClass(/done/);
+  await expect(haniel).toContainText("○");
+});
+
+test("the strip only exists in the week view", async ({ page }) => {
+  await openApp(page);
+  await page.locator('[data-view="month"]').click();
+  await expect(page.locator(".week-strip")).toHaveCount(0);
+  await page.locator('[data-view="week"]').click();
+  await expect(page.locator(".week-strip")).toHaveCount(1);
+});
+
+test("a person closes and reopens their own week", async ({ page }) => {
+  const state = await openApp(page, { me: "jean" });
+  await page.locator('.wk-btn[data-person="jean"]').click();
+  await expect(page.locator("#toast")).toHaveText("Semana de Jean fechada.");
+  await expect(page.locator(".wk-count")).toHaveText("1 de 5 programadas");
+  expect(state.requests.filter(function (r) { return r.body.op === "confirmWeek"; })[0].body).toEqual({ op: "confirmWeek", week: WEEK, person: "jean" });
+  await page.locator('.wk-btn[data-person="jean"]').click();
+  await expect(page.locator("#toast")).toHaveText("Semana de Jean reaberta.");
+  await expect(page.locator(".wk-count")).toHaveText("0 de 5 programadas");
+  expect(state.requests.filter(function (r) { return r.body.op === "unconfirmWeek"; })).toHaveLength(1);
+});
+
+test("a regular user cannot close someone else's week", async ({ page }) => {
+  const state = await openApp(page, { me: "jean" });
+  await page.locator('.wk-btn[data-person="haniel"]').click();
+  await expect(page.locator("#toast")).toHaveText("Você só pode fechar a sua própria semana.");
+  expect(state.requests.filter(function (r) { return r.body.op === "confirmWeek"; })).toHaveLength(0);
+});
+
+test("the administrator closes the week of anyone", async ({ page }) => {
+  const state = await openApp(page, { me: "pedro" });
+  await page.locator('.wk-btn[data-person="haniel"]').click();
+  await expect(page.locator("#toast")).toHaveText("Semana de Haniel fechada.");
+  expect(state.confirmations[WEEK].haniel).toBeTruthy();
+});
+
+test("anonymous visitors are asked to sign in instead", async ({ page }) => {
+  const state = await openApp(page);
+  await page.locator('.wk-btn[data-person="jean"]').click();
+  await expect(page.locator("#loginForm")).toBeVisible();
+  expect(state.requests.filter(function (r) { return r.body.op === "confirmWeek"; })).toHaveLength(0);
+});
+
+test("changing a marking reopens the closed week and the toast says so", async ({ page }) => {
+  await openApp(page, { me: "jean", confirmations: { [WEEK]: { jean: CLOSED_AT, haniel: CLOSED_AT } } });
+  await openDay(page);
+  await page.locator('input[name="modal-obra"][value="porto"]').check();
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toHaveText("1 marcação adicionada. Semana de Jean reaberta, feche de novo quando terminar.");
+  await expect(page.locator(".wk-count")).toHaveText("1 de 5 programadas");
+  await expect(page.locator('.wk-btn[data-person="jean"]')).not.toHaveClass(/done/);
+  await expect(page.locator('.wk-btn[data-person="haniel"]')).toHaveClass(/done/);
+});
+
+test("removing a marking reopens the week too", async ({ page }) => {
+  await openApp(page, { me: "jean", entries: MIX, confirmations: { [WEEK]: { jean: CLOSED_AT } } });
+  await openDay(page);
+  await page.locator('#modal .rm[data-id="m1"]').click();
+  await expect(page.locator("#toast")).toHaveText("Presença removida. Semana de Jean reaberta, feche de novo quando terminar.");
+});
+
+test("the message modal warns who is missing, without putting it in the message", async ({ page }) => {
+  await openApp(page, { confirmations: { [WEEK]: { jean: CLOSED_AT } } });
+  await page.locator("#waBtn").click();
+  await expect(page.locator("#waBanner")).toHaveClass(/warn/);
+  await expect(page.locator("#waBanner")).toHaveText("Faltam: Pedro, Haniel, Gustavo, Bruna.");
+  await expect(page.locator("#waText")).not.toHaveValue(/Faltam|programaram/);
+});
+
+test("the banner turns green when everybody closed the week, and follows background refreshes", async ({ page }) => {
+  const state = await openApp(page);
+  await page.locator("#waBtn").click();
+  await expect(page.locator("#waBanner")).toHaveText("Faltam: Pedro, Jean, Haniel, Gustavo, Bruna.");
+  state.confirmations[WEEK] = { pedro: CLOSED_AT, jean: CLOSED_AT, haniel: CLOSED_AT, gustavo: CLOSED_AT, bruna: CLOSED_AT };
+  await page.clock.fastForward(26000);
+  await expect(page.locator("#waBanner")).toHaveClass(/ok/);
+  await expect(page.locator("#waBanner")).toContainText("Todos programaram a semana");
+  await expect(page.locator("#waText")).not.toHaveValue(/programaram/);
+});
