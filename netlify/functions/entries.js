@@ -84,6 +84,17 @@ function applyOp(payload, state, iso) {
   }
 }
 
+// Reading never fails because of login problems: anything unclear means "anonymous".
+async function isSignedIn(event, store, settings) {
+  try {
+    if (A.configProblem(settings)) return false;
+    const users = await A.readUsers(store);
+    return !!(users && A.currentUser(event, users, settings));
+  } catch (e) {
+    return false;
+  }
+}
+
 function differs(a, b) {
   return a !== b && JSON.stringify(a) !== JSON.stringify(b);
 }
@@ -94,7 +105,12 @@ function makeHandler(store, opts) {
   return async function handler(event) {
     if (event.httpMethod === "GET") {
       const state = await readState(store);
-      return A.json(200, { entries: state.entries, confirmations: state.weeks });
+      if (await isSignedIn(event, store, settings)) {
+        return A.json(200, { entries: state.entries, confirmations: state.weeks });
+      }
+      // Anonymous visitors (the people at the obras) only get the weeks the five released.
+      const view = W.visitorView(state.entries, state.weeks);
+      return A.json(200, { entries: view.entries, confirmations: view.confirmations, restricted: true });
     }
 
     if (event.httpMethod !== "POST") return A.json(405, { error: "método não suportado" });

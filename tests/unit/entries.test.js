@@ -19,18 +19,47 @@ function setup(entries, extra) {
 
 // --- leitura ---------------------------------------------------------------
 
-test("GET is public, works without any secret and returns entries and confirmations", async function () {
-  const store = H.storeWith([E("a1", "pedro", "2026-10-27", "almada")], { weeks: { "2026-10-25": { jean: "t" } } });
+const ALL5 = { pedro: "t", jean: "t", haniel: "t", gustavo: "t", bruna: "t" };
+
+test("GET is public and works without any secret: visitors only get released weeks", async function () {
+  const store = H.storeWith(
+    [E("a1", "pedro", "2026-10-27", "almada"), E("a2", "jean", "2026-11-03", "porto")],
+    { weeks: { "2026-10-25": ALL5, "2026-11-01": { jean: "t" } } }
+  );
   const handler = makeHandler(store, { env: {}, now: H.OPTS.now });
   const res = await handler({ httpMethod: "GET", headers: {} });
   assert.equal(res.statusCode, 200);
-  assert.deepEqual(JSON.parse(res.body), { entries: [E("a1", "pedro", "2026-10-27", "almada")], confirmations: { "2026-10-25": { jean: "t" } } });
+  assert.deepEqual(JSON.parse(res.body), {
+    entries: [E("a1", "pedro", "2026-10-27", "almada")],
+    confirmations: { "2026-10-25": ALL5 },
+    restricted: true
+  });
+});
+
+test("GET for a visitor hides everything while no week is released", async function () {
+  const { handler } = setup([E("a1", "pedro", "2026-10-27", "almada")], { weeks: { "2026-10-25": { jean: "t", pedro: "t" } } });
+  const body = JSON.parse((await handler({ httpMethod: "GET", headers: {} })).body);
+  assert.deepEqual(body, { entries: [], confirmations: {}, restricted: true });
+});
+
+test("GET with a valid session returns everything, released or not", async function () {
+  const entries = [E("a1", "pedro", "2026-10-27", "almada"), E("a2", "jean", "2026-11-03", "porto")];
+  const weeks = { "2026-10-25": ALL5, "2026-11-01": { jean: "t" } };
+  const { handler, as } = setup(entries, { weeks: weeks });
+  const res = await handler({ httpMethod: "GET", headers: { cookie: as("jean") } });
+  assert.deepEqual(JSON.parse(res.body), { entries: entries, confirmations: weeks });
+});
+
+test("GET with a bad or foreign cookie is treated as a visitor", async function () {
+  const { handler } = setup([E("a1", "pedro", "2026-10-27", "almada")], { weeks: {} });
+  const res = await handler({ httpMethod: "GET", headers: { cookie: "agenda_session=lixo.lixo" } });
+  assert.deepEqual(JSON.parse(res.body), { entries: [], confirmations: {}, restricted: true });
 });
 
 test("GET on an empty store returns empty entries and confirmations", async function () {
   const { handler } = setup(null);
   const res = await handler({ httpMethod: "GET", headers: {} });
-  assert.deepEqual(JSON.parse(res.body), { entries: [], confirmations: {} });
+  assert.deepEqual(JSON.parse(res.body), { entries: [], confirmations: {}, restricted: true });
 });
 
 test("unsupported method returns 405", async function () {

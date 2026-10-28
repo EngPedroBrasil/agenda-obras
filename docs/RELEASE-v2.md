@@ -89,6 +89,7 @@ O Netlify faz o deploy sozinho. Espere ficar *Published*.
 3. Avise a equipe: cada um entra com o próprio nome e a senha inicial e escolhe uma nova.
 4. Faça uma marcação de teste e remova.
 5. Em *Administração*, depois da primeira alteração do dia, a lista mostra o backup diário.
+6. Abra o link `https://agenda-obras.netlify.app/?visitante=1` numa janela anônima: só deve aparecer a semana atual se as cinco pessoas tiverem confirmado; senão, a mensagem "Esta semana ainda não foi liberada". Sem botões de mês, Atenção ou gerar mensagem.
 
 ## 7. Se algo der errado: voltar para a versão anterior
 

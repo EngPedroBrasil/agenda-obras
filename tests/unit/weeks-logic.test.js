@@ -50,3 +50,15 @@ test("reopenForEntries reopens the week of each affected person and only theirs"
   assert.equal(W.reopenForEntries(weeks, []), weeks);
   assert.equal(W.reopenForEntries(weeks, [{ person: "bruna", date: "2026-10-28" }]), weeks);
 });
+
+test("isReleased needs all five people; releasedWeeks and visitorView keep only those weeks", function () {
+  const all = { pedro: "t", jean: "t", haniel: "t", gustavo: "t", bruna: "t" };
+  const weeks = { "2026-10-25": all, "2026-11-01": { jean: "t", pedro: "t", haniel: "t", gustavo: "t" } };
+  assert.equal(W.isReleased(weeks, "2026-10-25"), true);
+  assert.equal(W.isReleased(weeks, "2026-11-01"), false);
+  assert.equal(W.isReleased(weeks, "2026-11-08"), false);
+  assert.deepEqual(Object.keys(W.releasedWeeks(weeks)), ["2026-10-25"]);
+  const entries = [{ date: "2026-10-31" }, { date: "2026-11-01" }, { date: "2026-10-25" }, { date: "lixo" }];
+  assert.deepEqual(W.visitorView(entries, weeks).entries, [{ date: "2026-10-31" }, { date: "2026-10-25" }]);
+  assert.deepEqual(W.visitorView(null, null), { entries: [], confirmations: {} });
+});

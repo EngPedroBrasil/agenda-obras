@@ -56,4 +56,29 @@ function reopenForEntries(weeks, affected) {
   }, weeks);
 }
 
-module.exports = { isSunday, weekKeyOf, validateWeekOp, confirmWeek, unconfirmWeek, reopenForEntries };
+// A week is "released" (liberada) when all five people closed it.
+function isReleased(weeks, key) {
+  var w = weeks && weeks[key];
+  return !!w && PEOPLE_IDS.every(function (id) { return !!w[id]; });
+}
+
+function releasedWeeks(weeks) {
+  var out = {};
+  Object.keys(weeks || {}).forEach(function (key) {
+    if (isReleased(weeks, key)) out[key] = weeks[key];
+  });
+  return out;
+}
+
+// What an anonymous visitor may see: only entries that fall in a released week.
+function visitorView(entries, weeks) {
+  var released = releasedWeeks(weeks);
+  return {
+    entries: (entries || []).filter(function (en) {
+      return isRealDate(en.date) && Object.prototype.hasOwnProperty.call(released, weekKeyOf(en.date));
+    }),
+    confirmations: released
+  };
+}
+
+module.exports = { isSunday, weekKeyOf, validateWeekOp, confirmWeek, unconfirmWeek, reopenForEntries, isReleased, releasedWeeks, visitorView };

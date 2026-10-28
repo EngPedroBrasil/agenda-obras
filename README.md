@@ -25,6 +25,7 @@ Pessoas e obras são listas fixas, validadas no backend.
 - Senhas guardadas com scrypt; sessão em cookie `agenda_session` (`HttpOnly`, `Secure`, `SameSite=Strict`) assinado com `SESSION_SECRET`, válido por 30 dias.
 - 5 erros de senha seguidos bloqueiam a pessoa por 15 minutos.
 - A senha inicial vem da variável `INITIAL_PASSWORD` (nunca fica no repositório); quem entra com ela é obrigado a trocar antes de marcar.
+- Visitantes (quem não fez login, por exemplo o pessoal da obra) recebem do servidor **apenas as semanas liberadas** (as cinco pessoas confirmaram "Semana programada"). O filtro é feito em `GET /api/entries`, não só na tela. Quem está logado vê tudo. Se alguém alterar uma marcação, a semana deixa de estar liberada e some para os visitantes até ser confirmada de novo.
 - Backup automático: a primeira gravação de cada dia guarda `backup-AAAA-MM-DD` (mantém 30). Restaurar guarda antes uma cópia `backup-prerestore-*`.
 
 ## Rodando localmente

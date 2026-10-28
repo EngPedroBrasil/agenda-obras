@@ -6,7 +6,7 @@ test.use({ timezoneId: "America/Sao_Paulo", locale: "pt-BR" });
 // ---- Tarefa 19: cabeçalho estável e rótulos -------------------------------------------
 
 test("header controls keep their place when switching between Semana and Mês", async ({ page }) => {
-  await openApp(page);
+  await openApp(page, { me: "pedro" });
   const ids = ["#viewSeg", "#periodLabel", "#themeToggle", "#waBtn", "#groupSeg"];
   async function boxes() {
     const out = {};
@@ -25,7 +25,7 @@ test("header controls keep their place when switching between Semana and Mês", 
 });
 
 test("period labels keep small words in lowercase and only the first letter capitalised", async ({ page }) => {
-  await openApp(page);
+  await openApp(page, { me: "pedro" });
   await expect(page.locator("#periodLabel")).toHaveText("25–31 de outubro de 2026");
   await page.locator('[data-view="month"]').click();
   await expect(page.locator("#periodLabel")).toHaveText("Outubro de 2026");
@@ -45,7 +45,7 @@ const ATT = [
 ];
 
 async function openAttention(page) {
-  const state = await openApp(page, { entries: ATT });
+  const state = await openApp(page, { entries: ATT, me: "pedro" });
   await page.locator('[data-view="attention"]').click();
   await expect(page.locator(".att-table")).toBeVisible();
   return state;
@@ -95,7 +95,7 @@ test("the obra filter narrows the table", async ({ page }) => {
 });
 
 test("the header keeps its place and the label reads Atenção por obra", async ({ page }) => {
-  await openApp(page, { entries: ATT });
+  await openApp(page, { entries: ATT, me: "pedro" });
   const ids = ["#viewSeg", "#periodLabel", "#themeToggle"];
   const before = {};
   for (const id of ids) before[id] = await page.locator(id).boundingBox();
@@ -408,7 +408,7 @@ const WEEK = "2026-10-25"; // domingo da semana de 27/10/2026
 const CLOSED_AT = "2026-10-27T15:00:00.000Z"; // 12:00 em São Paulo
 
 test("the strip shows who already closed the week, with the closing time", async ({ page }) => {
-  await openApp(page, { confirmations: { [WEEK]: { jean: CLOSED_AT } } });
+  await openApp(page, { me: "pedro", confirmations: { [WEEK]: { jean: CLOSED_AT } } });
   await expect(page.locator(".week-strip .wk-btn")).toHaveCount(5);
   await expect(page.locator(".wk-count")).toHaveText("1 de 5 programadas");
   const jean = page.locator('.wk-btn[data-person="jean"]');
@@ -422,7 +422,7 @@ test("the strip shows who already closed the week, with the closing time", async
 });
 
 test("the strip only exists in the week view", async ({ page }) => {
-  await openApp(page);
+  await openApp(page, { me: "pedro" });
   await page.locator('[data-view="month"]').click();
   await expect(page.locator(".week-strip")).toHaveCount(0);
   await page.locator('[data-view="week"]').click();
@@ -455,11 +455,68 @@ test("the administrator closes the week of anyone", async ({ page }) => {
   expect(state.confirmations[WEEK].haniel).toBeTruthy();
 });
 
-test("anonymous visitors are asked to sign in instead", async ({ page }) => {
-  const state = await openApp(page);
-  await page.locator('.wk-btn[data-person="jean"]').click();
-  await expect(page.locator("#loginForm")).toBeVisible();
-  expect(state.requests.filter(function (r) { return r.body.op === "confirmWeek"; })).toHaveLength(0);
+// ---- Visitante: só semanas liberadas ------------------------------------------------------
+
+const ALL5 = { pedro: CLOSED_AT, jean: CLOSED_AT, haniel: CLOSED_AT, gustavo: CLOSED_AT, bruna: CLOSED_AT };
+const VIS = [
+  { id: "v1", date: "2026-10-27", person: "pedro", obra: "almada", createdAt: "x" },
+  { id: "v2", date: "2026-11-10", person: "jean", obra: "porto", createdAt: "x" }
+];
+
+test("visitors have no Mês/Atenção, no Gerar mensagem and no week strip", async ({ page }) => {
+  await openApp(page, { entries: VIS, confirmations: { [WEEK]: ALL5 } });
+  await expect(page.locator(".day-card").first()).toBeVisible();
+  await expect(page.locator("#viewSeg")).toBeHidden();
+  await expect(page.locator("#waBtn")).toBeHidden();
+  await expect(page.locator(".week-strip")).toHaveCount(0);
+  await expect(page.locator("#periodLabel")).toHaveText("25–31 de outubro de 2026");
+});
+
+test("a visitor sees a message instead of the week while it is not released", async ({ page }) => {
+  await openApp(page, { entries: VIS, confirmations: { [WEEK]: { jean: CLOSED_AT } } });
+  await expect(page.locator(".visitor-lock")).toContainText("ainda não foi liberada");
+  await expect(page.locator(".day-card")).toHaveCount(0);
+  await expect(page.locator('[data-action="prev"]')).toBeDisabled();
+  await expect(page.locator('[data-action="next"]')).toBeDisabled();
+});
+
+test("visitor arrows jump only between released weeks", async ({ page }) => {
+  // semanas liberadas: 25/10 e 8/11; 1/11 está incompleta
+  await openApp(page, { entries: VIS, confirmations: { [WEEK]: ALL5, "2026-11-01": { jean: CLOSED_AT }, "2026-11-08": ALL5 } });
+  await expect(page.locator('[data-action="prev"]')).toBeDisabled();
+  await page.locator('[data-action="next"]').click();
+  await expect(page.locator("#periodLabel")).toHaveText("8–14 de novembro de 2026");
+  await expect(page.locator(".day-card").first()).toBeVisible();
+  await expect(page.locator('[data-action="next"]')).toBeDisabled();
+  await page.locator('[data-action="prev"]').click();
+  await expect(page.locator("#periodLabel")).toHaveText("25–31 de outubro de 2026");
+  await page.locator('[data-action="next"]').click();
+  await page.locator('[data-action="today"]').click();
+  await expect(page.locator("#periodLabel")).toHaveText("25–31 de outubro de 2026");
+});
+
+test("a week that gets released shows up for the visitor on the next refresh", async ({ page }) => {
+  const state = await openApp(page, { entries: VIS, confirmations: {} });
+  await expect(page.locator(".visitor-lock")).toBeVisible();
+  state.confirmations[WEEK] = ALL5;
+  await page.clock.fastForward(26000);
+  await expect(page.locator(".day-card").first()).toBeVisible();
+  await expect(page.locator(".visitor-lock")).toHaveCount(0);
+});
+
+test("signing in unlocks everything and signing out locks it again", async ({ page }) => {
+  await openApp(page, { entries: VIS, confirmations: { [WEEK]: { jean: CLOSED_AT } } });
+  await expect(page.locator(".visitor-lock")).toBeVisible();
+  await loginAs(page, "jean", "Mudar@123");
+  await expect(page.locator(".day-card").first()).toBeVisible();
+  await expect(page.locator(".week-strip")).toBeVisible();
+  await expect(page.locator("#viewSeg")).toBeVisible();
+  await expect(page.locator("#waBtn")).toBeVisible();
+  await page.locator("#userBtn").click();
+  await page.locator('#userMenu [data-action="logout"]').click();
+  await page.locator('[data-action="landing-visitor"]').click();
+  await expect(page.locator(".visitor-lock")).toBeVisible();
+  await expect(page.locator("#viewSeg")).toBeHidden();
 });
 
 test("changing a marking reopens the closed week and the toast says so", async ({ page }) => {
@@ -481,7 +538,7 @@ test("removing a marking reopens the week too", async ({ page }) => {
 });
 
 test("the message modal warns who is missing, without putting it in the message", async ({ page }) => {
-  await openApp(page, { confirmations: { [WEEK]: { jean: CLOSED_AT } } });
+  await openApp(page, { me: "pedro", confirmations: { [WEEK]: { jean: CLOSED_AT } } });
   await page.locator("#waBtn").click();
   await expect(page.locator("#waBanner")).toHaveClass(/warn/);
   await expect(page.locator("#waBanner")).toHaveText("Faltam: Pedro, Haniel, Gustavo, Bruna.");
@@ -489,7 +546,7 @@ test("the message modal warns who is missing, without putting it in the message"
 });
 
 test("the banner turns green when everybody closed the week, and follows background refreshes", async ({ page }) => {
-  const state = await openApp(page);
+  const state = await openApp(page, { me: "pedro" });
   await page.locator("#waBtn").click();
   await expect(page.locator("#waBanner")).toHaveText("Faltam: Pedro, Jean, Haniel, Gustavo, Bruna.");
   state.confirmations[WEEK] = { pedro: CLOSED_AT, jean: CLOSED_AT, haniel: CLOSED_AT, gustavo: CLOSED_AT, bruna: CLOSED_AT };
@@ -677,7 +734,7 @@ test("editing keeps the meeting note and can clear it", async ({ page }) => {
 });
 
 test("the message modal offers copy and share only: no download, no WhatsApp link", async ({ page }) => {
-  await openApp(page);
+  await openApp(page, { me: "pedro" });
   await page.locator("#waBtn").click();
   await expect(page.locator('[data-action="copy-wa-message"]')).toBeVisible();
   await expect(page.locator('[data-action="copy-wa-image"]')).toBeVisible();

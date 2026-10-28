@@ -470,6 +470,11 @@
   .wk-btn:not(.done) { border-color: var(--danger); background: rgba(192, 57, 43, 0.12); color: var(--danger); }
   .wk-btn.done { border-color: #2e9e5b; background: rgba(46, 158, 91, 0.14); color: var(--ink); }
   .wk-count { margin-left: auto; font-size: 12.5px; color: var(--ink-faint); }
+  body.visitor #viewSeg, body.visitor #waBtn { display: none; }
+  .arrows button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .visitor-lock { text-align: center; padding: 56px 20px; border: 1.5px dashed var(--border); border-radius: var(--radius); color: var(--ink-soft); }
+  .visitor-lock strong { display: block; font-size: 17px; color: var(--ink); margin-bottom: 6px; }
+  .visitor-lock span { font-size: 13.5px; }
   .wa-banner { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; }
   .wa-banner.ok { background: rgba(46, 158, 91, 0.16); color: var(--ink); }
   .wa-banner.warn { background: rgba(230, 160, 30, 0.2); color: var(--ink); }
@@ -915,7 +920,21 @@
     if (err && (err.status === 400 || err.status === 403 || err.status === 404 || err.status === 429) && err.message) return err.message;
     return fallback;
   }
+  // The server answers differently for visitors and signed-in people, so reload on change.
+  var audience = null;
+  function syncAudience() {
+    var now = !!me;
+    var changed = audience !== null && audience !== now;
+    audience = now;
+    if (!changed) return;
+    loadState().then(function (state) {
+      applyState(state);
+      render();
+      refreshWaBanner();
+    }).catch(function () { /* o pr\u00f3ximo ciclo tenta de novo */ });
+  }
   function onMeChanged() {
+    syncAudience();
     userMenuOpen = false;
     if (me && me.mustChange) authMode = "change";
     else if (!me && (authMode === "change" || authMode === "admin")) authMode = null;
@@ -1179,7 +1198,22 @@
     }).join("");
   }
 
+  // Weeks released (liberadas) = all five closed them. The server already hides the rest from
+  // visitors; the page only has to explain the empty state and limit the navigation.
+  function releasedKeys() {
+    return Object.keys(confirmations).filter(function (week) {
+      return TEAM.every(function (p) { return !!(confirmations[week] && confirmations[week][p.id]); });
+    }).sort();
+  }
+  function isReleasedWeek(key) { return releasedKeys().indexOf(key) >= 0; }
+  function visitorLockHTML() {
+    var hasAny = releasedKeys().length > 0;
+    return '<div class="visitor-lock"><strong>Esta semana ainda n\u00e3o foi liberada</strong>' +
+      "<span>" + (hasAny ? "Use as setas para ver as semanas j\u00e1 liberadas pela equipe." : "Assim que a equipe liberar a programa\u00e7\u00e3o, ela aparece aqui.") + "</span></div>";
+  }
+
   function renderWeek() {
+    if (!me && !isReleasedWeek(weekKeyOfCursor())) return visitorLockHTML();
     var start = startOfWeek(cursor);
     var today = new Date(); today.setHours(0, 0, 0, 0);
     var cells = [];
@@ -1198,7 +1232,7 @@
         "</div>"
       );
     }
-    return weekStripHTML(start) + '<div class="week-scroll"><div class="week-grid">' + cells.join("") + "</div></div>";
+    return (me ? weekStripHTML(start) : "") + '<div class="week-scroll"><div class="week-grid">' + cells.join("") + "</div></div>";
   }
 
   function renderMonth() {
@@ -1292,7 +1326,22 @@
     return bar + note + '<div class="att-scroll"><table class="att-table"><thead>' + head + "</thead><tbody>" + body + sum + "</tbody></table></div>";
   }
 
+  function visitorStep(dir) {
+    var cur = weekKeyOfCursor();
+    var keys = releasedKeys();
+    var found = null;
+    if (dir < 0) { keys.forEach(function (k) { if (k < cur) found = k; }); }
+    else { found = keys.filter(function (k) { return k > cur; })[0] || null; }
+    return found;
+  }
+
   function renderCalendar() {
+    document.body.classList.toggle("visitor", !me);
+    if (!me && view !== "week") view = "week";
+    var arrowPrev = document.querySelector('#arrowsBox [data-action="prev"]');
+    var arrowNext = document.querySelector('#arrowsBox [data-action="next"]');
+    arrowPrev.disabled = !me && !visitorStep(-1);
+    arrowNext.disabled = !me && !visitorStep(1);
     document.getElementById("periodLabel").textContent = periodLabel();
     document.getElementById("calendarArea").innerHTML = view === "week" ? renderWeek() : view === "month" ? renderMonth() : renderAttention();
     document.getElementById("viewSeg").querySelectorAll("button").forEach(function (b) {
@@ -1508,7 +1557,7 @@
       '<h2>Agenda de Obras</h2><p class="landing-sub">Blendi Engenharia</p>' +
       '<button type="button" class="btn btn-primary" data-action="landing-login">Entrar</button>' +
       '<button type="button" class="btn btn-ghost" data-action="landing-visitor">Entrar como visitante</button>' +
-      '<p class="landing-hint">Visitantes veem a agenda, mas n\u00e3o alteram nada.</p>';
+      '<p class="landing-hint">Visitantes veem apenas as semanas liberadas pela equipe.</p>';
     overlay.classList.add("show");
   }
   function maybeShowLanding() {
@@ -1958,6 +2007,12 @@
     var action = el.getAttribute("data-action");
     if (action === "prev" || action === "next") {
       var dir = action === "prev" ? -1 : 1;
+      if (!me) {
+        var target = visitorStep(dir);
+        if (target) cursor = parseKey(target);
+        renderCalendar();
+        return;
+      }
       cursor = view === "week" ? addDays(cursor, 7 * dir) : new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1);
       renderCalendar();
     } else if (action === "today") {

@@ -22,6 +22,32 @@ function json(route, status, body) {
   return route.fulfill({ status: status, contentType: "application/json", body: JSON.stringify(body) });
 }
 
+// Same rule as the server: a visitor only gets weeks that all five people closed.
+function visitorView(state) {
+  const released = {};
+  Object.keys(state.confirmations).forEach(function (week) {
+    const w = state.confirmations[week];
+    if (Object.keys(PEOPLE).every(function (id) { return !!w[id]; })) released[week] = w;
+  });
+  return {
+    entries: state.entries.filter(function (e) { return !!released[weekKeyOf(e.date)]; }),
+    confirmations: released,
+    restricted: true
+  };
+}
+
+// Weeks (Sundays) around the fixed clock, all released: the default for anonymous tests that
+// only want to look at the calendar. Pass opts.confirmations or opts.locked to opt out.
+function releasedAround() {
+  const out = {};
+  const all = {};
+  Object.keys(PEOPLE).forEach(function (id) { all[id] = SERVER_NOW; });
+  for (let d = Date.UTC(2026, 8, 6); d <= Date.UTC(2026, 11, 27); d += 7 * 86400000) {
+    out[new Date(d).toISOString().slice(0, 10)] = Object.assign({}, all);
+  }
+  return out;
+}
+
 function userRecord(state, id) {
   return { id: id, name: PEOPLE[id], role: id === "pedro" ? "admin" : "user", mustChange: state.mustChange.indexOf(id) >= 0 };
 }
@@ -64,7 +90,7 @@ async function stubApi(page, opts) {
   opts = opts || {};
   const state = {
     entries: JSON.parse(JSON.stringify(opts.entries || [])),
-    confirmations: JSON.parse(JSON.stringify(opts.confirmations || {})),
+    confirmations: JSON.parse(JSON.stringify(opts.confirmations || (opts.me || opts.locked ? {} : releasedAround()))),
     me: null,
     passwords: {},
     mustChange: (opts.mustChange || []).slice(),
@@ -81,7 +107,10 @@ async function stubApi(page, opts) {
 
   await page.route("**/api/entries", async function (route) {
     const req = route.request();
-    if (req.method() === "GET") return json(route, 200, { entries: state.entries, confirmations: state.confirmations });
+    if (req.method() === "GET") {
+      if (!state.me) return json(route, 200, visitorView(state));
+      return json(route, 200, { entries: state.entries, confirmations: state.confirmations });
+    }
     const p = req.postDataJSON();
     state.requests.push({ path: "/api/entries", body: p });
     if (state.failNext) { const f = state.failNext; state.failNext = null; return json(route, f.status, { error: f.error || "erro simulado" }); }
@@ -215,7 +244,7 @@ async function openApp(page, opts) {
   const loaded = page.waitForResponse(function (r) { return r.url().indexOf("/api/entries") >= 0 && r.request().method() === "GET"; });
   await page.goto(url);
   await loaded;
-  await page.waitForSelector("#calendarArea .day-card, #calendarArea .month-cell, #calendarArea .att-table", { state: "attached" });
+  await page.waitForSelector("#calendarArea .day-card, #calendarArea .month-cell, #calendarArea .att-table, #calendarArea .visitor-lock", { state: "attached" });
   return state;
 }
 
