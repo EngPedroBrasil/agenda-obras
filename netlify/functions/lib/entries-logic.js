@@ -34,15 +34,26 @@ function validateMeeting(value) {
   if (value.end <= value.start) {
     return { ok: false, error: "o fim da reunião deve ser depois do início" };
   }
+  if (value.note !== undefined && value.note !== null) {
+    if (typeof value.note !== "string") return { ok: false, error: "comentário da reunião inválido" };
+    if (value.note.trim().length > MAX_COMMENT_LENGTH) {
+      return { ok: false, error: "comentário da reunião muito longo (máximo " + MAX_COMMENT_LENGTH + " caracteres)" };
+    }
+  }
   return { ok: true };
 }
 
+// { start, end, note? }: the note is the meeting's own comment, separate from the visit comment.
 function normalizeMeeting(value) {
-  return value ? { start: value.start, end: value.end } : null;
+  if (!value) return null;
+  var out = { start: value.start, end: value.end };
+  var note = typeof value.note === "string" ? value.note.trim() : "";
+  if (note) out.note = note;
+  return out;
 }
 
 function sameMeeting(a, b) {
-  return !!a && !!b && a.start === b.start && a.end === b.end;
+  return !!a && !!b && a.start === b.start && a.end === b.end && (a.note || "") === (b.note || "");
 }
 
 function isRealDate(key) {

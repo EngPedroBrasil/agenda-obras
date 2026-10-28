@@ -82,3 +82,10 @@ test("a meeting goes right after the obra name, before the comment", function ()
   assert.ok(text.includes("Quarta (28) Porto, reunião 14h–15h30 (pauta)"), text);
   assert.ok(text.includes("Quinta (29) Almada, reunião 9h–10h"), text);
 });
+
+test("the meeting's own note follows the time, separate from the visit comment", function () {
+  const text = msg([
+    e("jean", "2026-10-28", "porto", { meeting: { start: "14:00", end: "15:30", note: "alinhar cronograma" }, comment: "vistoria" })
+  ]);
+  assert.ok(text.includes("Quarta (28) Porto, reunião 14h–15h30: alinhar cronograma (vistoria)"), text);
+});

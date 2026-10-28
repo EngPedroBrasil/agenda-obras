@@ -37,7 +37,7 @@
         var pdata = sector.people[person.id];
         if (!pdata.days[dayLabel]) { pdata.days[dayLabel] = []; pdata.dayOrder.push(dayLabel); }
         var meeting = MeetingFormat.formatMeetingShort(en.meeting);
-        pdata.days[dayLabel].push((obra.shortName || obra.name) + (meeting ? ", reunião " + meeting : "") + (en.comment ? " (" + en.comment + ")" : ""));
+        pdata.days[dayLabel].push((obra.shortName || obra.name) + (meeting ? ", reunião " + meeting + (en.meeting.note ? ": " + en.meeting.note : "") : "") + (en.comment ? " (" + en.comment + ")" : ""));
       });
     }
 

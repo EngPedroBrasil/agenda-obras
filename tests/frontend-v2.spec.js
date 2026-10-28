@@ -415,7 +415,7 @@ test("the strip shows who already closed the week, with the closing time", async
   await expect(jean).toHaveAttribute("title", "Fechada em 27/10 às 12:00");
   const haniel = page.locator('.wk-btn[data-person="haniel"]');
   await expect(haniel).not.toHaveClass(/done/);
-  await expect(haniel).toContainText("○");
+  await expect(haniel).toContainText("?");
 });
 
 test("the strip only exists in the week view", async ({ page }) => {
@@ -593,4 +593,90 @@ test("a failed restore shows the server message and keeps the data", async ({ pa
   await page.locator('[data-action="admin-restore-yes"]').click();
   await expect(page.locator("#toast")).toHaveText("backup não encontrado");
   await expect(page.locator('.day-card[data-date="' + DAY + '"] .entry-chip')).toHaveCount(2);
+});
+
+// ---- Ajustes pós-teste: tela inicial, comentário da reunião, modal da mensagem ---------------------
+
+test("the initial menu offers sign in or visitor access", async ({ page }) => {
+  await openApp(page, { landing: true });
+  await expect(page.locator("#landingOverlay")).toHaveClass(/show/);
+  await expect(page.locator('[data-action="landing-login"]')).toBeVisible();
+  await expect(page.locator('[data-action="landing-visitor"]')).toBeVisible();
+});
+
+test("choosing visitor closes the menu and is remembered on this device", async ({ page }) => {
+  await openApp(page, { landing: true });
+  await page.locator('[data-action="landing-visitor"]').click();
+  await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
+  await expect(page.locator(".day-card").first()).toBeVisible();
+  await page.reload();
+  await page.waitForSelector("#calendarArea .day-card");
+  await page.waitForTimeout(300);
+  await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
+});
+
+test("choosing Entrar opens the login form", async ({ page }) => {
+  await openApp(page, { landing: true });
+  await page.locator('[data-action="landing-login"]').click();
+  await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
+  await expect(page.locator("#loginForm")).toBeVisible();
+});
+
+test("the direct visitor link skips the menu", async ({ page }) => {
+  await openApp(page, { landing: true });
+  await page.goto("https://agenda.test/?visitante=1");
+  await page.waitForSelector("#calendarArea .day-card");
+  await page.waitForTimeout(300);
+  await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
+});
+
+test("a signed-in person does not see the menu, and signing out brings it back", async ({ page }) => {
+  await openApp(page, { me: "jean", landing: true });
+  await page.waitForTimeout(300);
+  await expect(page.locator("#landingOverlay")).not.toHaveClass(/show/);
+  await page.locator("#userBtn").click();
+  await page.locator('#userMenu [data-action="logout"]').click();
+  await expect(page.locator("#landingOverlay")).toHaveClass(/show/);
+});
+
+test("a meeting has its own comment, separate from the visit comment", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: [] });
+  await openDay(page);
+  await page.locator('input[name="modal-obra"][value="porto"]').check();
+  const box = page.locator('.obra-extra[data-obra="porto"]');
+  await box.locator(".obra-comment").fill("vistoria");
+  await box.locator(".meet-on").check();
+  await box.locator(".meet-start").fill("14:00");
+  await box.locator(".meet-note").fill("alinhar cronograma");
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toHaveText("1 marcação adicionada.");
+  const item = state.requests.filter(function (r) { return r.body.op === "addMany"; })[0].body.items[0];
+  expect(item.comment).toBe("vistoria");
+  expect(item.meeting).toEqual({ start: "14:00", end: "15:00", note: "alinhar cronograma" });
+  const chip = page.locator("#modal .entry-chip", { hasText: "Jean" });
+  await expect(chip).toContainText("Reunião 14:00–15:00: alinhar cronograma");
+  await expect(chip).toContainText("vistoria");
+});
+
+test("editing keeps the meeting note and can clear it", async ({ page }) => {
+  const entries = [{ id: "n1", date: DAY, person: "jean", obra: "almada", createdAt: "x", meeting: { start: "14:00", end: "15:00", note: "pauta" } }];
+  const state = await openApp(page, { me: "jean", entries: entries });
+  await openDay(page);
+  await page.locator('#modal .edit[data-id="n1"]').click();
+  await expect(page.locator(".comment-edit .meet-note")).toHaveValue("pauta");
+  await page.locator(".comment-edit .meet-note").fill("");
+  await page.locator('.comment-edit button[type="submit"]').click();
+  await expect(page.locator("#toast")).toHaveText("Comentário salvo.");
+  const call = state.requests.filter(function (r) { return r.body.op === "update"; })[0];
+  expect(call.body.meeting).toEqual({ start: "14:00", end: "15:00" });
+});
+
+test("the message modal offers copy and share only: no download, no WhatsApp link", async ({ page }) => {
+  await openApp(page);
+  await page.locator("#waBtn").click();
+  await expect(page.locator('[data-action="copy-wa-message"]')).toBeVisible();
+  await expect(page.locator('[data-action="copy-wa-image"]')).toBeVisible();
+  await expect(page.locator("#waImageDownload")).toHaveCount(0);
+  await expect(page.locator('#waModal a[href*="wa.me"]')).toHaveCount(0);
+  await expect(page.locator('#waModal a[download]')).toHaveCount(0);
 });

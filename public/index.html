@@ -426,7 +426,14 @@
   .acting-as { margin: 0 0 6px; font-size: 13.5px; }
   .meet-block { display: flex; flex-direction: column; gap: 6px; }
   .meet-toggle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
-  .meet-times { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-soft); }
+  .meet-times { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12.5px; color: var(--ink-soft); }
+  .meet-note {
+    flex: 1 1 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 8px; color: var(--ink); font: inherit; font-size: 13px;
+  }
+  .landing { text-align: center; }
+  .landing h2 { margin: 0 0 2px; }
+  .landing .btn { display: block; width: 100%; margin-top: 10px; }
   .meet-times[hidden] { display: none; }
   .meet-times input[type="time"] {
     background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
@@ -783,6 +790,9 @@
 <div class="overlay" id="authOverlay">
   <div class="modal" id="authModal" role="dialog" aria-modal="true"></div>
 </div>
+<div class="overlay" id="landingOverlay">
+  <div class="modal" id="landingModal" role="dialog" aria-modal="true"></div>
+</div>
 <div class="toast" id="toast"></div>
 
 <script src="lib/grouping.js"></script>
@@ -1066,6 +1076,7 @@
       '<input type="time" class="meet-start" aria-label="Início da reunião" value="' + (on ? h(meeting.start) : "") + '">' +
       "<span>até</span>" +
       '<input type="time" class="meet-end" aria-label="Fim da reunião" value="' + (on ? h(meeting.end) : "") + '">' +
+      '<input type="text" class="meet-note" maxlength="140" aria-label="Comentário da reunião" placeholder="Comentário da reunião (opcional)" value="' + (on && meeting.note ? h(meeting.note) : "") + '">' +
       "</div></div>";
   }
 
@@ -1076,7 +1087,11 @@
     var start = box.querySelector(".meet-start").value;
     var end = box.querySelector(".meet-end").value;
     if (!start || !end || end <= start) return { ok: false };
-    return { ok: true, meeting: { start: start, end: end } };
+    var meeting = { start: start, end: end };
+    var noteInput = box.querySelector(".meet-note");
+    var note = noteInput ? noteInput.value.trim() : "";
+    if (note) meeting.note = note;
+    return { ok: true, meeting: meeting };
   }
 
   function editFormHTML(en) {
@@ -1107,7 +1122,7 @@
         detail = editFormHTML(en);
       } else if (en.comment || clock) {
         detail = '<div class="chip-detail">' +
-          (clock ? '<span class="chip-meeting">&#128337; Reunião ' + clock + "</span>" : "") +
+          (clock ? '<span class="chip-meeting">&#128337; Reunião ' + clock + (en.meeting.note ? ": " + h(en.meeting.note) : "") + "</span>" : "") +
           (en.comment ? '<span class="chip-comment-text">' + h(en.comment) + "</span>" : "") + "</div>";
       }
     } else if (en.comment) {
@@ -1117,7 +1132,7 @@
       '<img src="' + obra.icon + '" alt="">' +
       '<span class="chip-text"><span class="chip-name" title="' + h(person.name) + '">' + h(person.name) + "</span>" +
       '<span class="chip-obra" title="' + h(obra.name) + '">' + h(obra.shortName || obra.name) + "</span>" +
-      (!detailed && clock ? '<span class="chip-meeting">' + clock + "</span>" : "") + "</span>" +
+      (!detailed && clock ? '<span class="chip-meeting"' + (en.meeting.note ? ' title="' + h(en.meeting.note) + '"' : "") + ">" + clock + "</span>" : "") + "</span>" +
       badge + editBtn + rmBtn + detail + "</div>";
   }
 
@@ -1466,6 +1481,31 @@
     return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
   }
 
+  /* ---- initial menu: sign in or just look ---- */
+  var landingOpen = false;
+  var VISITOR_KEY = "agenda-obras-visitor";
+  function visitorChosen() {
+    if (/(^|[?&])visitante(=|&|$)/.test(location.search)) return true; // direct link for the obras
+    try { return localStorage.getItem(VISITOR_KEY) === "1"; } catch (e) { return false; }
+  }
+  function rememberVisitor(on) {
+    try { if (on) localStorage.setItem(VISITOR_KEY, "1"); else localStorage.removeItem(VISITOR_KEY); } catch (e) { /* ignora */ }
+  }
+  function renderLanding() {
+    var overlay = document.getElementById("landingOverlay");
+    var box = document.getElementById("landingModal");
+    if (!landingOpen) { overlay.classList.remove("show"); box.innerHTML = ""; return; }
+    box.innerHTML = '<div class="landing"><h2>Agenda de Obras</h2><p class="modal-sub">Blendi Engenharia</p>' +
+      '<button type="button" class="btn btn-primary" data-action="landing-login">Entrar</button>' +
+      '<button type="button" class="btn" data-action="landing-visitor">Entrar como visitante</button>' +
+      '<p class="modal-sub">Visitantes veem a agenda, mas não alteram nada.</p></div>';
+    overlay.classList.add("show");
+  }
+  function maybeShowLanding() {
+    landingOpen = !me && !visitorChosen() && !authMode;
+    renderLanding();
+  }
+
   function renderAuth() {
     var area = document.getElementById("authArea");
     if (!me) {
@@ -1575,6 +1615,9 @@
     apiRequest("POST", "/api/auth", { op: "logout" }).catch(function () { /* cookie expira sozinho */ }).then(function () {
       me = null;
       authMode = null;
+      rememberVisitor(false);
+      landingOpen = true;
+      renderLanding();
       onMeChanged();
       showToast("Você saiu.");
     });
@@ -1804,9 +1847,6 @@
       var box = document.getElementById("waImageBox");
       if (!box) return;
       box.innerHTML = '<img src="' + waImageUrl + '" alt="Prévia da imagem da semana">';
-      var link = document.getElementById("waImageDownload");
-      link.href = waImageUrl;
-      link.download = weekImageFileName();
       var file = new File([blob], weekImageFileName(), { type: "image/png" });
       document.getElementById("waShareBtn").hidden = !(navigator.canShare && navigator.canShare({ files: [file] }));
       document.getElementById("waImageActions").hidden = false;
@@ -1834,9 +1874,9 @@
       var at = conf[p.id];
       if (at) done++;
       return '<button type="button" class="wk-btn' + (at ? " done" : "") + '" data-action="toggle-week" data-person="' + p.id + '" aria-pressed="' + !!at + '" ' +
-        'title="' + (at ? "Fechada em " + formatClosedAt(at) : "Ainda não programou a semana") + '">' + (at ? "&#10003; " : "&#9675; ") + h(p.name) + "</button>";
+        'title="' + (at ? "Fechada em " + formatClosedAt(at) : "Clique para confirmar que a semana está programada") + '">' + (at ? "&#10003; " : "? ") + h(p.name) + "</button>";
     }).join("");
-    return '<div class="week-strip"><span class="wk-label">Semana programada</span>' + buttons +
+    return '<div class="week-strip"><span class="wk-label">Semana programada?</span>' + buttons +
       '<span class="wk-count">' + done + " de " + TEAM.length + " programadas</span></div>";
   }
 
@@ -1876,21 +1916,18 @@
       return;
     }
     var message = buildWeeklyWhatsAppMessage();
-    var waLink = "https://wa.me/?text=" + encodeURIComponent(message);
     document.getElementById("waModal").innerHTML =
       '<div class="modal-head"><div><h2>Mensagem da semana</h2></div><button class="close-x" data-action="close-wa-modal" aria-label="Fechar">&times;</button></div>' +
       waBannerHTML() +
-      '<p class="modal-sub">Confira o texto, edite se quiser, e copie ou abra direto no WhatsApp.</p>' +
+      '<p class="modal-sub">Confira o texto e edite se quiser. No celular, o botão Compartilhar envia o texto e a imagem juntos.</p>' +
       '<textarea class="wa-textarea" id="waText">' + h(message) + '</textarea>' +
       '<div class="wa-actions">' +
       '<button class="btn" data-action="copy-wa-message">Copiar texto</button>' +
-      '<a class="btn primary" href="' + waLink + '" target="_blank" rel="noopener">Abrir no WhatsApp</a>' +
       '</div>' +
       '<div class="modal-section-title">Imagem da semana</div>' +
       '<div class="wa-image-box" id="waImageBox"><p class="modal-sub">Gerando imagem…</p></div>' +
       '<div class="wa-actions" id="waImageActions" hidden>' +
       '<button class="btn" data-action="copy-wa-image">Copiar imagem</button>' +
-      '<a class="btn" id="waImageDownload" href="#" download="agenda-obras.png">Baixar imagem</a>' +
       '<button class="btn primary" id="waShareBtn" data-action="share-wa-image" hidden>Compartilhar</button>' +
       '</div>';
     overlay.classList.add("show");
@@ -1923,6 +1960,15 @@
     } else if (action === "set-view") {
       view = el.getAttribute("data-view");
       renderCalendar();
+    } else if (action === "landing-login") {
+      landingOpen = false;
+      renderLanding();
+      authMode = "login";
+      renderAuthModal();
+    } else if (action === "landing-visitor") {
+      rememberVisitor(true);
+      landingOpen = false;
+      renderLanding();
     } else if (action === "open-login") {
       authMode = "login";
       renderAuthModal();
@@ -2101,6 +2147,7 @@
   fetchMe().then(function (user) {
     me = user;
     onMeChanged();
-  }).catch(function () { /* sem sessão: segue só leitura */ });
+    maybeShowLanding();
+  }).catch(function () { maybeShowLanding(); /* sem sessão: segue só leitura */ });
 })();
 </script>

@@ -280,3 +280,22 @@ test("addManyEntries rejects an empty list, a non-array and more than 60 items",
   assert.equal(logic.addManyEntries([], many, makeMaker()).ok, false);
   assert.equal(logic.MAX_MANY, 60);
 });
+
+// --- comentário da reunião (meeting.note) -------------------------------
+test("a meeting may carry its own note, trimmed and limited to 140 characters", function () {
+  const base = { date: "2026-08-27", person: "pedro", obra: "almada" };
+  assert.equal(validateEntry(Object.assign({}, base, { meeting: { start: "14:00", end: "15:00", note: "pauta" } })).ok, true);
+  assert.equal(validateEntry(Object.assign({}, base, { meeting: { start: "14:00", end: "15:00", note: 5 } })).ok, false);
+  assert.equal(validateEntry(Object.assign({}, base, { meeting: { start: "14:00", end: "15:00", note: "x".repeat(141) } })).ok, false);
+  const out = logic.updateEntry([{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x" }], "a1", { meeting: { start: "14:00", end: "15:00", note: "  pauta  ", extra: 1 } });
+  assert.deepEqual(out[0].meeting, { start: "14:00", end: "15:00", note: "pauta" });
+  const blank = logic.updateEntry(out, "a1", { meeting: { start: "14:00", end: "15:00", note: "   " } });
+  assert.deepEqual(blank[0].meeting, { start: "14:00", end: "15:00" });
+});
+
+test("addEntry updates the meeting when only its note changes", function () {
+  const existing = [{ id: "a1", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "x", meeting: { start: "14:00", end: "15:00", note: "antiga" } }];
+  const result = addEntry(existing, { id: "a2", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "y", meeting: { start: "14:00", end: "15:00", note: "nova" } });
+  assert.equal(result[0].meeting.note, "nova");
+  assert.equal(addEntry(result, { id: "a3", date: "2026-08-27", person: "pedro", obra: "almada", createdAt: "z", meeting: { start: "14:00", end: "15:00", note: "nova" } }), result);
+});
