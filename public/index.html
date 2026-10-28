@@ -722,6 +722,15 @@
     opacity: 0; pointer-events: none; transition: opacity .2s;
   }
   .toast.show { opacity: 1; }
+  .auth-area { gap: 8px; }
+  .admin-bar {
+    margin: 0 0 12px; padding: 8px 12px; border-radius: 10px;
+    background: #c0392b; color: #fff; font-size: 12.5px; font-weight: 800; letter-spacing: 0.04em;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .admin-bar[hidden] { display: none; }
+  .admin-bar .btn-mini { background: #fff; color: #c0392b; border-color: transparent; }
+  .wk-btn:disabled { cursor: default; }
 
   @media (max-width: 720px) {
     .week-grid { grid-template-columns: repeat(7, minmax(130px, 1fr)); }
@@ -743,6 +752,7 @@
       <button class="theme-toggle" id="themeToggle" data-action="toggle-theme" aria-label="Alternar tema claro/escuro"></button>
     </div>
   </header>
+  <div class="admin-bar" id="adminBar" hidden></div>
   <div class="local-banner" id="localBanner" hidden>AMBIENTE LOCAL DE TESTE &mdash; os dados desta tela s&atilde;o de teste e n&atilde;o afetam a produ&ccedil;&atilde;o.</div>
   <nav class="nav-row" aria-label="Navega&ccedil;&atilde;o do calend&aacute;rio">
     <div class="seg" id="viewSeg">
@@ -938,7 +948,9 @@
     userMenuOpen = false;
     if (me && me.mustChange) authMode = "change";
     else if (!me && (authMode === "change" || authMode === "admin")) authMode = null;
+    else if (authMode === "admin" && !(me && me.role === "admin")) authMode = null;
     renderAuth();
+    renderAdminBar();
     renderAuthModal();
     render();
   }
@@ -1403,6 +1415,9 @@
       return '<p class="modal-sub">Troque a sua senha para poder marcar.</p>' +
         '<button type="button" class="btn btn-primary" data-action="open-change">Trocar senha</button>';
     }
+    if (isManager()) {
+      return '<p class="modal-sub">Você acompanha a agenda em modo leitura. As marcações são feitas pela equipe.</p>';
+    }
     var who = me.role === "admin"
       ? '<label class="field"><span>Marcando como</span><select id="actAs" name="act-as">' + TEAM.map(function (p) {
           return '<option value="' + p.id + '"' + (p.id === me.id ? " selected" : "") + ">" + h(p.name) + "</option>";
@@ -1580,17 +1595,24 @@
     area.innerHTML = '<button class="today-btn" id="userBtn" data-action="toggle-user-menu" aria-haspopup="true" aria-expanded="' + userMenuOpen + '">' +
       h(me.name) + ' &#9662;</button>' +
       '<div class="user-menu" id="userMenu"' + (userMenuOpen ? "" : " hidden") + ">" +
+      (me.canElevate ? (me.role === "admin"
+        ? '<button data-action="unelevate">Desligar modo administrador</button>'
+        : '<button data-action="elevate">Modo administrador</button>') : "") +
       (me.role === "admin" ? '<button data-action="open-admin">Administração</button>' : "") +
       '<button data-action="open-change">Trocar senha</button>' +
       '<button data-action="logout">Sair</button></div>';
   }
+
+  function isManager() { return !!me && me.role === "manager"; }
+  // Quem pode entrar: a equipe da agenda + o gestor (que não aparece nos filtros nem nas semanas).
+  function loginPeople() { return TEAM.concat([{ id: "leonardo", name: "Leonardo" }]); }
 
   function loginHTML() {
     var last = rememberedUser();
     return '<div class="modal-head"><div><h2>Entrar</h2></div><button class="close-x" data-action="close-auth" aria-label="Fechar">&times;</button></div>' +
       '<p class="modal-sub">Escolha o seu nome e digite a senha.</p>' +
       '<form id="loginForm" class="auth-form">' +
-      '<label class="field"><span>Nome</span><select name="user">' + TEAM.map(function (p) {
+      '<label class="field"><span>Nome</span><select name="user">' + loginPeople().map(function (p) {
         return '<option value="' + p.id + '"' + (p.id === last ? " selected" : "") + ">" + h(p.name) + "</option>";
       }).join("") + "</select></label>" +
       '<label class="field"><span>Senha</span><input type="password" name="password" autocomplete="current-password" required></label>' +
@@ -1694,7 +1716,7 @@
   var adminConfirm = null;        // { kind: "reset" | "restore", id }
 
   function adminInnerHTML() {
-    var people = TEAM.map(function (p) {
+    var people = loginPeople().map(function (p) {
       var right;
       if (p.id === me.id) {
         right = '<span class="admin-note">você</span>';
@@ -1810,6 +1832,42 @@
       showToast(describeError(err, "Não foi possível restaurar agora."));
     });
   }
+
+  /* ---------------- admin mode ---------------- */
+  function formatClock(ms) {
+    var parts = {};
+    new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" })
+      .formatToParts(new Date(ms)).forEach(function (p) { parts[p.type] = p.value; });
+    return parts.hour + ":" + parts.minute;
+  }
+  function renderAdminBar() {
+    var bar = document.getElementById("adminBar");
+    if (!bar) return;
+    if (!(me && me.role === "admin")) { bar.hidden = true; bar.innerHTML = ""; return; }
+    bar.innerHTML = "<span>MODO ADMINISTRADOR &mdash; volta ao comum às " + formatClock(me.elevatedUntil) + "</span>" +
+      '<button type="button" class="btn-mini" data-action="unelevate">Desligar</button>';
+    bar.hidden = false;
+  }
+  function doElevate(on) {
+    userMenuOpen = false;
+    apiRequest("POST", "/api/auth", { op: on ? "elevate" : "unelevate" }).then(function (data) {
+      me = data.user;
+      onMeChanged();
+      showToast(on ? "Modo administrador ligado por 15 minutos." : "Modo administrador desligado.");
+    }).catch(function (err) {
+      showToast(describeError(err, "Não foi possível agora. Tente de novo."));
+    });
+  }
+  // Passou do prazo: pergunta ao servidor o papel de agora e avisa, em vez de deixar a tela mentindo.
+  setInterval(function () {
+    if (!me || me.role !== "admin" || !me.elevatedUntil || me.elevatedUntil > Date.now()) return;
+    fetchMe().then(function (user) {
+      var was = me && me.role;
+      me = user;
+      onMeChanged();
+      if (user && was === "admin" && user.role !== "admin") showToast("Modo administrador desligado.");
+    }).catch(function () { /* tenta no próximo ciclo */ });
+  }, 15000);
 
   /* ---------------- toast ---------------- */
   var toastTimer = null;
@@ -1938,7 +1996,7 @@
     var buttons = TEAM.map(function (p) {
       var at = conf[p.id];
       if (at) done++;
-      return '<button type="button" class="wk-btn' + (at ? " done" : "") + '" data-action="toggle-week" data-person="' + p.id + '" aria-pressed="' + !!at + '" ' +
+      return '<button type="button" class="wk-btn' + (at ? " done" : "") + '" data-action="toggle-week" data-person="' + p.id + '" aria-pressed="' + !!at + '"' + (isManager() ? " disabled" : "") + " " +
         'title="' + (at ? "Fechada em " + formatClosedAt(at) : "Clique para confirmar que a semana está programada") + '">' + (at ? "&#10003; " : "&#10007; ") + h(p.name) + "</button>";
     }).join("");
     return '<div class="week-strip"><span class="wk-label">Semana programada?</span>' + buttons +
@@ -1948,6 +2006,7 @@
   function toggleWeek(pid) {
     if (!me) { authMode = "login"; renderAuthModal(); showToast("Entre para fechar a sua semana."); return; }
     if (me.mustChange) { authMode = "change"; renderAuthModal(); return; }
+    if (isManager()) { showToast("Você acompanha a agenda; cada pessoa fecha a própria semana."); return; }
     if (!canEditPerson(pid)) { showToast("Você só pode fechar a sua própria semana."); return; }
     var key = weekKeyOfCursor();
     var closed = !!(confirmations[key] && confirmations[key][pid]);
@@ -2080,6 +2139,10 @@
       if (me && me.role === "admin") doAdminRestore(el.getAttribute("data-id"));
     } else if (action === "admin-download") {
       if (me && me.role === "admin") downloadBackupFile();
+    } else if (action === "elevate") {
+      doElevate(true);
+    } else if (action === "unelevate") {
+      doElevate(false);
     } else if (action === "toggle-week") {
       toggleWeek(el.getAttribute("data-person"));
     } else if (action === "set-att-period") {
