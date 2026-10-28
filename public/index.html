@@ -722,56 +722,59 @@
   var entries = [];
 
   /* ---------------- API ---------------- */
-  function fetchEntries() {
-    return fetch("/api/entries").then(function (res) {
-      if (!res.ok) throw new Error("fetch failed");
-      return res.json();
-    }).then(function (data) {
-      return Array.isArray(data.entries) ? data.entries : [];
+  var confirmations = {};   // { "AAAA-MM-DD" (domingo): { pessoa: ISO } }
+  var me = null;            // { id, name, role, mustChange } or null
+
+  function apiRequest(method, path, body) {
+    var init = { method: method, credentials: "same-origin", headers: {} };
+    if (body !== undefined) {
+      init.headers["content-type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (res) {
+      return res.json().catch(function () { return {}; }).then(function (data) {
+        if (!res.ok) {
+          var err = new Error((data && data.error) || ("erro " + res.status));
+          err.status = res.status;
+          throw err;
+        }
+        return data;
+      });
     });
   }
-  function submitUpdateComment(id, comment) {
-    return fetch("/api/entries", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ op: "update", id: id, comment: comment })
-    }).then(function (res) {
-      if (!res.ok) {
-        var err = new Error("update failed");
-        err.status = res.status;
-        throw err;
-      }
-      return res.json();
-    }).then(function (data) {
-      entries = Array.isArray(data.entries) ? data.entries : entries;
+  function normalizeState(data) {
+    return {
+      entries: Array.isArray(data.entries) ? data.entries : [],
+      confirmations: data.confirmations && typeof data.confirmations === "object" ? data.confirmations : {}
+    };
+  }
+  function loadState() { return apiRequest("GET", "/api/entries").then(normalizeState); }
+  function applyState(state) { entries = state.entries; confirmations = state.confirmations; }
+  function entriesOp(payload) {
+    return apiRequest("POST", "/api/entries", payload).then(function (data) {
+      applyState(normalizeState(data));
+      return data;
     });
   }
-  function submitAdd(date, person, obra, comment) {
+  function submitAdd(date, person, obra, comment, meeting) {
     var payload = { op: "add", date: date, person: person, obra: obra };
     if (comment) payload.comment = comment;
-    return fetch("/api/entries", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(payload)
-    }).then(function (res) {
-      if (!res.ok) throw new Error("add failed");
-      return res.json();
-    }).then(function (data) {
-      entries = Array.isArray(data.entries) ? data.entries : entries;
-    });
+    if (meeting) payload.meeting = meeting;
+    return entriesOp(payload);
   }
-  function submitRemove(id) {
-    return fetch("/api/entries", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ op: "remove", id: id })
-    }).then(function (res) {
-      if (!res.ok) throw new Error("remove failed");
-      return res.json();
-    }).then(function (data) {
-      entries = Array.isArray(data.entries) ? data.entries : entries;
-    });
+  function submitAddMany(items) { return entriesOp({ op: "addMany", items: items }); }
+  function submitUpdate(id, patch) { return entriesOp(Object.assign({ op: "update", id: id }, patch)); }
+  function submitRemove(id) { return entriesOp({ op: "remove", id: id }); }
+  function submitWeek(op, week, person) { return entriesOp({ op: op, week: week, person: person }); }
+  function fetchMe() { return apiRequest("GET", "/api/auth").then(function (data) { return data.user || null; }); }
+
+  function describeError(err, fallback) {
+    if (err && err.status === 401) { onSessionLost(); return "Sua sessão expirou. Entre de novo."; }
+    if (err && (err.status === 400 || err.status === 403 || err.status === 429) && err.message) return err.message;
+    return fallback;
   }
+  function onMeChanged() { render(); }
+  function onSessionLost() { me = null; onMeChanged(); }
 
   /* ---------------- date helpers ---------------- */
   function pad(n) { return (n < 10 ? "0" : "") + n; }
@@ -1038,6 +1041,34 @@
     });
   }
 
+  function currentListHTML(key) {
+    var byPerson = {};
+    entriesForDate(key).forEach(function (en) {
+      if (!byPerson[en.person]) byPerson[en.person] = [];
+      byPerson[en.person].push(en);
+    });
+    var ids = Object.keys(byPerson);
+    if (!ids.length) return '<p class="current-empty">Ninguém marcado neste dia ainda.</p>';
+    return ids.map(function (pid) {
+      var person = personById[pid];
+      if (!person) return "";
+      return '<div class="person-group"><div class="pg-name">' + h(person.name) + '</div><div class="pg-obras">' +
+        byPerson[pid].map(function (en) { return entryChipHTML(en, true); }).join("") +
+        "</div></div>";
+    }).join("");
+  }
+  // Repaints only the list of the open day; the add form is never touched.
+  function paintModalList() {
+    if (!modalDateKey) return;
+    var box = document.querySelector("#modal .current-list");
+    if (box) box.innerHTML = currentListHTML(modalDateKey);
+  }
+  // Same, but leaves an open edit form alone (used by background refreshes).
+  function refreshModalList() {
+    if (editingEntryId) return;
+    paintModalList();
+  }
+
   function renderModal() {
     var overlay = document.getElementById("overlay");
     if (!modalDateKey) { editingEntryId = null; overlay.classList.remove("show"); return; }
@@ -1047,20 +1078,7 @@
     var weekdayFull = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"][d.getDay()];
     var label = capFirst(weekdayFull + ", " + d.getDate() + " de " + MONTH_NAMES[d.getMonth()]);
 
-    var byPerson = {};
-    dayEntries.forEach(function (en) {
-      if (!byPerson[en.person]) byPerson[en.person] = [];
-      byPerson[en.person].push(en);
-    });
-    var currentHTML = Object.keys(byPerson).length === 0
-      ? '<p class="current-empty">Ninguém marcado neste dia ainda.</p>'
-      : Object.keys(byPerson).map(function (pid) {
-          var person = personById[pid];
-          if (!person) return "";
-          return '<div class="person-group"><div class="pg-name">' + h(person.name) + '</div><div class="pg-obras">' +
-            byPerson[pid].map(function (en) { return entryChipHTML(en, true); }).join("") +
-            "</div></div>";
-        }).join("");
+    var currentHTML = currentListHTML(modalDateKey);
 
     var personOptions = TEAM.map(function (p) {
       return '<label class="opt-row"><input type="radio" name="modal-person" value="' + p.id + '" style="accent-color:var(--accent)">' +
@@ -1122,8 +1140,8 @@
         renderModal();
         renderCalendar();
         showToast("Presença adicionada.");
-      }).catch(function () {
-        showToast("Não foi possível salvar agora. Tente de novo.");
+      }).catch(function (err) {
+        showToast(describeError(err, "Não foi possível salvar agora. Tente de novo."));
         addBtn.disabled = false;
         addBtn.textContent = "Adicionar";
       });
@@ -1148,11 +1166,14 @@
   }
 
   /* ---------------- live refresh ---------------- */
+  // Polling refreshes the calendar and only the list of the open day; the add form is never
+  // rebuilt, so what the person is typing survives.
   function pollForUpdates() {
-    fetchEntries().then(function (newEntries) {
-      if (JSON.stringify(newEntries) === JSON.stringify(entries)) return;
-      entries = newEntries;
-      render();
+    loadState().then(function (state) {
+      if (JSON.stringify(state) === JSON.stringify({ entries: entries, confirmations: confirmations })) return;
+      applyState(state);
+      renderCalendar();
+      refreshModalList();
     }).catch(function () { /* silent — tenta de novo no próximo ciclo */ });
   }
   setInterval(pollForUpdates, 25000);
@@ -1320,20 +1341,20 @@
     } else if (action === "remove-entry") {
       var id = el.getAttribute("data-id");
       submitRemove(id).then(function () {
-        renderModal();
+        paintModalList();
         renderCalendar();
         showToast("Presença removida.");
-      }).catch(function () {
-        showToast("Não foi possível remover agora. Tente de novo.");
+      }).catch(function (err) {
+        showToast(describeError(err, "Não foi possível remover agora. Tente de novo."));
       });
     } else if (action === "edit-comment") {
       editingEntryId = el.getAttribute("data-id");
-      renderModal();
+      paintModalList();
       var editInput = document.querySelector(".comment-edit input");
       if (editInput) { editInput.focus(); editInput.setSelectionRange(editInput.value.length, editInput.value.length); }
     } else if (action === "cancel-edit-comment") {
       editingEntryId = null;
-      renderModal();
+      paintModalList();
     } else if (action === "open-wa-modal") {
       waModalOpen = true;
       renderWaModal();
@@ -1378,18 +1399,18 @@
     ev.preventDefault();
     var id = editForm.getAttribute("data-id");
     var text = editForm.querySelector("input").value.trim();
-    submitUpdateComment(id, text).then(function () {
+    submitUpdate(id, { comment: text }).then(function () {
       editingEntryId = null;
-      renderModal();
+      paintModalList();
       renderCalendar();
       showToast("Comentário salvo.");
     }).catch(function (err) {
       if (err && err.status === 404) {
         editingEntryId = null;
-        fetchEntries().then(function (loaded) { entries = loaded; render(); });
+        loadState().then(function (state) { applyState(state); render(); });
         showToast("Essa marcação não existe mais.");
       } else {
-        showToast("Não foi possível salvar agora. Tente de novo.");
+        showToast(describeError(err, "Não foi possível salvar agora. Tente de novo."));
       }
     });
   });
@@ -1402,11 +1423,15 @@
   applyTheme();
   renderLegend();
   render();
-  fetchEntries().then(function (loaded) {
-    entries = loaded;
+  loadState().then(function (state) {
+    applyState(state);
     render();
   }).catch(function () {
     showToast("Não foi possível carregar os dados agora.");
   });
+  fetchMe().then(function (user) {
+    me = user;
+    onMeChanged();
+  }).catch(function () { /* sem sessão: segue só leitura */ });
 })();
 </script>
