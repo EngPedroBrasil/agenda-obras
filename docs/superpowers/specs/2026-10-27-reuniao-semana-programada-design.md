@@ -5,7 +5,8 @@
 Segundo de três lotes definidos em 2026-10-27. O Lote 1
 (`2026-10-27-atencao-por-obra-design.md`) entrega a aba "Atenção", 3 correções e ajustes de
 interface, sem mudar a API. Este lote muda a API e o modelo de dados de forma compatível com o que
-existe. O Lote 3 (login por pessoa, cada um só edita o próprio nome) será especificado depois.
+existe. O Lote 3 (`2026-10-27-login-admin-backup-design.md`: login por pessoa, administrador, backup e
+lançamento único) sai no mesmo lançamento.
 
 ## Objetivo
 
@@ -17,7 +18,8 @@ existe. O Lote 3 (login por pessoa, cada um só edita o próprio nome) será esp
 
 ## Não-objetivos
 
-- Login por pessoa (Lote 3). Sem ele, qualquer pessoa pode fechar a semana de outra.
+- Login por pessoa (Lote 3, mesmo lançamento). Com ele, cada um fecha só a própria semana e o
+  administrador fecha ou reabre a de qualquer pessoa.
 - Marcação "Sem obra" (férias, folga, escritório): fica para depois; quem não vai a obra alguma
   fecha a semana mesmo assim ("semana sem visitas").
 - Comentários prontos por função, repetir semana/recorrência, aviso de sobreposição.
@@ -97,7 +99,5 @@ Tudo compatível com os dados e o front atuais.
 
 ## Entrega
 
-Backend e front num único deploy, como no Lote 1: rascunho grátis, depois um deploy de produção
-(15 créditos). Atenção: o rascunho usa as mesmas variáveis do site (`BLOBS_SITE_ID`, `BLOBS_TOKEN`)
-e, portanto, provavelmente o **mesmo banco de produção**; os testes no rascunho devem usar
-marcações de teste e removê-las no fim. A conferir no plano de implementação.
+Os Lotes 1, 2 e 3 saem juntos num **único lançamento**, com branch, backup e rollback
+descritos em "Lançamento único" no spec `2026-10-27-login-admin-backup-design.md`.

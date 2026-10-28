@@ -8,7 +8,8 @@ O Pedro quer entender **quantas vezes cada pessoa foi a cada obra**, para perceb
 está recebendo menos atenção que as outras. Aproveitamos o mesmo lote para corrigir 3 bugs pequenos e fazer ajustes de interface pedidos em
 2026-10-27. Este é o **Lote 1** de três: o Lote 2 (reunião com horário, vários dias, semana
 programada) tem spec próprio em `2026-10-27-reuniao-semana-programada-design.md`; o Lote 3
-(login por pessoa) ainda será especificado.
+(login por pessoa, administrador, backup e lançamento único) está em
+`2026-10-27-login-admin-backup-design.md`.
 
 ## Objetivo
 
@@ -21,7 +22,7 @@ programada) tem spec próprio em `2026-10-27-reuniao-semana-programada-design.md
 
 ## Não-objetivos (decididos fora desta rodada, sem dor real até agora)
 
-- Autenticação / login por pessoa (Lote 3, a especificar).
+- Autenticação / login por pessoa (Lote 3, spec próprio, mesmo lançamento).
 - Reunião com horário, marcar vários dias, semana programada (Lote 2).
 - Backup/snapshot dos dados.
 - Um blob por marcação (mitigação de concorrência).
@@ -107,6 +108,5 @@ Sem mudança no backend para este recurso.
 
 ## Entrega
 
-Código e testes feitos localmente, commit local. Deploy pelo Pedro no PowerShell: primeiro
-**rascunho** (grátis, sem `--prod`), depois **um** deploy de produção (15 créditos), seguindo o
-README do repositório.
+Os Lotes 1, 2 e 3 saem juntos num **único lançamento**, com branch, backup e rollback
+descritos em "Lançamento único" no spec `2026-10-27-login-admin-backup-design.md`.
