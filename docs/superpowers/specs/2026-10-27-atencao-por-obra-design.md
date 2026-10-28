@@ -1,11 +1,14 @@
-# Agenda de Obras — aba "Atenção por obra" e 3 correções
+# Agenda de Obras — aba "Atenção por obra", 3 correções e ajustes de interface (Lote 1)
 
 ## Contexto
 
 A Agenda de Obras está em produção (https://agenda-obras.netlify.app) com ~160 marcações das 5
 pessoas nas 6 obras. A análise de 2026-10-27 não encontrou problema vivido pelo time até agora.
 O Pedro quer entender **quantas vezes cada pessoa foi a cada obra**, para perceber se alguma obra
-está recebendo menos atenção que as outras. Aproveitamos o mesmo lote para corrigir 3 bugs pequenos.
+está recebendo menos atenção que as outras. Aproveitamos o mesmo lote para corrigir 3 bugs pequenos e fazer ajustes de interface pedidos em
+2026-10-27. Este é o **Lote 1** de três: o Lote 2 (reunião com horário, vários dias, semana
+programada) tem spec próprio em `2026-10-27-reuniao-semana-programada-design.md`; o Lote 3
+(login por pessoa) ainda será especificado.
 
 ## Objetivo
 
@@ -13,10 +16,13 @@ está recebendo menos atenção que as outras. Aproveitamos o mesmo lote para co
    próxima visita por obra, e destaque das obras que ficaram para trás.
 2. Corrigir: (a) formulário do modal que reseta durante o polling, (b) comentário descartado ao
    remarcar a mesma pessoa+obra+dia, (c) datas inexistentes aceitas pela API.
+3. Ajustes de interface: cabeçalho estável entre as visões, rótulos sem "De" capitalizado e
+   mensagem de WhatsApp com linha em branco entre pessoas.
 
 ## Não-objetivos (decididos fora desta rodada, sem dor real até agora)
 
-- Senha compartilhada / autenticação.
+- Autenticação / login por pessoa (Lote 3, a especificar).
+- Reunião com horário, marcar vários dias, semana programada (Lote 2).
 - Backup/snapshot dos dados.
 - Um blob por marcação (mitigação de concorrência).
 - Cadastro de pessoas/obras fora do código.
@@ -73,11 +79,28 @@ Sem mudança no backend para este recurso.
 3. **Data inexistente.** `validateEntry` rejeita datas que não fazem round-trip em `Date.UTC`
    (ex.: `2026-99-99`, `2026-02-30`) com a mesma mensagem de data inválida.
 
+## Ajustes de interface
+
+1. **Cabeçalho estável.** Hoje os controles exclusivos da visão Semana ("Por pessoa / Por obra" e
+   "Gerar mensagem") são escondidos com `display:none` nas outras visões, e o resto do cabeçalho
+   muda de posição. Passam a ocupar o espaço sempre e ficar apenas invisíveis
+   (`visibility:hidden`) em Mês e Atenção, de modo que Semana/Mês/Atenção, "Hoje" e o rótulo do
+   período fiquem sempre no mesmo lugar.
+2. **Rótulos sem capitalizar.** O `text-transform: capitalize` do rótulo do período e do título do
+   modal transforma "de" em "De" ("25–31 De Outubro De 2026"). Passa a ser "25–31 de outubro de
+   2026"; só a primeira letra é maiúscula quando a frase começa pelo mês ("Outubro de 2026").
+3. **Mensagem de WhatsApp com respiro.** Linha em branco entre pessoas do mesmo setor (hoje
+   Haniel e Jean saem grudados). O montador da mensagem, que hoje fica dentro do `index.html` e
+   não tem teste, vai para o módulo puro `public/lib/week-message.js` (UMD, como os demais) e passa
+   a ser testado. Formato de cada pessoa: nome, linhas por dia, linha em branco.
+
 ## Testes
 
 - Unitários (`node --test`), escritos antes da implementação: `tests/unit/attention.test.js`
   (períodos, hoje = realizado, obra nunca visitada, sem planejado, virada de mês/ano, ids
   desconhecidos) e casos novos em `entries-logic.test.js` para as correções 2 e 3.
+- `tests/unit/week-message.test.js`: linha em branco entre pessoas e entre setores, ordem dos
+  setores e dos dias, comentário entre parênteses, semana sem marcações.
 - Correção 1 verificada manualmente no rascunho (duas abas; marcar numa enquanto preenche na
   outra) e coberta, se viável, por um caso em `tests/frontend-static.spec.js`.
 - Conferir a aba "Atenção" no rascunho com os dados reais de produção.
