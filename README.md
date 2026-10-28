@@ -43,7 +43,7 @@ cp .env.example .env     # preencha SESSION_SECRET (32+ caracteres) e INITIAL_PA
 npx netlify-cli dev --offline
 ```
 
-Abra `http://localhost:8888`. O ambiente local usa uma loja própria (`agenda-obras-dev`), ignora `BLOBS_SITE_ID`/`BLOBS_TOKEN` e mostra a faixa "Ambiente de testes".
+Abra `http://localhost:8888`. O ambiente local guarda os dados em arquivos (`.netlify/local-data`), nunca usa o Netlify Blobs nem as credenciais de produção, e mostra a faixa "Ambiente de testes".
 
 Os testes de navegador (Playwright) ficam em `tests/*.spec.js`; usam uma API simulada e não precisam de servidor. O `tests/frontend-live.spec.js` roda contra um servidor de verdade e só executa se `AGENDA_USER` e `AGENDA_PASSWORD` estiverem definidos (use um servidor local ou uma conta de teste, ele cria e remove uma marcação).
 

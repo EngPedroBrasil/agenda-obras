@@ -52,7 +52,7 @@ Abra `http://localhost:8888`. Confira a faixa amarela "Ambiente de testes" e per
 7. Menu do seu nome → *Administração*: zere a senha de outra pessoa, baixe o backup, veja a lista de backups.
 8. Saia, entre como outra pessoa (senha inicial → troca) e confirme que ela só consegue mexer no próprio nome.
 
-Os dados desse teste ficam na loja `agenda-obras-dev` e não aparecem na produção.
+Os dados desse teste ficam em arquivos locais (`.netlify\local-data`) e não aparecem na produção.
 
 ## 4. Enviar a branch (não publica nada)
 
