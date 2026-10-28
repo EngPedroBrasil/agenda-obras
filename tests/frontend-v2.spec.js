@@ -201,3 +201,201 @@ test("the local-test banner is hidden when the page is not local", async ({ page
   await openApp(page);
   await expect(page.locator("#localBanner")).toBeHidden();
 });
+
+// ---- Tarefa 23: modal do dia ---------------------------------------------------------------
+
+const DAY = "2026-10-27";
+const MIX = [
+  { id: "m1", date: DAY, person: "jean", obra: "almada", createdAt: "x", comment: "vistoria", meeting: { start: "14:00", end: "15:30" } },
+  { id: "m2", date: DAY, person: "haniel", obra: "porto", createdAt: "x" }
+];
+
+async function openDay(page, key) {
+  await page.locator('[data-action="open-day"][data-date="' + (key || DAY) + '"]').first().click();
+  await expect(page.locator("#modal")).toBeVisible();
+}
+
+test("anonymous visitors see the day but cannot edit anything", async ({ page }) => {
+  await openApp(page, { entries: MIX });
+  await expect(page.locator(".entry-chip .rm")).toHaveCount(0);
+  await openDay(page);
+  await expect(page.locator("#modal .rm, #modal .edit")).toHaveCount(0);
+  await expect(page.locator("#addForm")).toHaveCount(0);
+  await page.locator('#modal [data-action="open-login"]').click();
+  await expect(page.locator("#loginForm")).toBeVisible();
+});
+
+test("a user who must change the password is asked to do so in the day modal", async ({ page }) => {
+  await openApp(page, { me: "jean", mustChange: ["jean"] });
+  await expect(page.locator("#changeForm")).toBeVisible();
+});
+
+test("a regular user marks only as themselves: no person list, just the obras", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: [] });
+  await openDay(page);
+  await expect(page.locator(".acting-as")).toContainText("Marcando como Jean");
+  await expect(page.locator('input[name="modal-person"]')).toHaveCount(0);
+  await expect(page.locator("#actAs")).toHaveCount(0);
+  await expect(page.locator('input[name="modal-obra"]')).toHaveCount(6);
+  await expect(page.locator("#addBtn")).toBeDisabled();
+  await page.locator('input[name="modal-obra"][value="almada"]').check();
+  await expect(page.locator("#addBtn")).toBeEnabled();
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toHaveText("1 marcação adicionada.");
+  const call = state.requests.filter(function (r) { return r.body.op === "addMany"; })[0];
+  expect(call.body.items).toEqual([{ date: DAY, person: "jean", obra: "almada" }]);
+  await expect(page.locator('.day-card[data-date="' + DAY + '"] .entry-chip')).toHaveCount(1);
+});
+
+test("× and ✎ only appear for the owner; the administrator sees them everywhere", async ({ page }) => {
+  await openApp(page, { me: "jean", entries: MIX });
+  await openDay(page);
+  const jean = page.locator("#modal .entry-chip", { hasText: "Jean" });
+  const haniel = page.locator("#modal .entry-chip", { hasText: "Haniel" });
+  await expect(jean.locator(".rm")).toHaveCount(1);
+  await expect(jean.locator(".edit")).toHaveCount(1);
+  await expect(haniel.locator(".rm")).toHaveCount(0);
+  await expect(haniel.locator(".edit")).toHaveCount(0);
+  await expect(page.locator('.day-card[data-date="' + DAY + '"] .entry-chip .rm')).toHaveCount(1);
+});
+
+test("the administrator picks who to mark as", async ({ page }) => {
+  const state = await openApp(page, { me: "pedro", entries: [] });
+  await openDay(page);
+  await expect(page.locator("#actAs option")).toHaveCount(5);
+  await expect(page.locator("#actAs")).toHaveValue("pedro");
+  await page.locator("#actAs").selectOption("haniel");
+  await page.locator('input[name="modal-obra"][value="tulipas"]').check();
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toHaveText("1 marcação adicionada.");
+  const call = state.requests.filter(function (r) { return r.body.op === "addMany"; })[0];
+  expect(call.body.items[0]).toMatchObject({ person: "haniel", obra: "tulipas" });
+});
+
+test("several days at once go in a single addMany; the picker keeps the selection across weeks", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: [] });
+  await openDay(page);
+  await expect(page.locator("#daysCount")).toHaveText("1 dia selecionado");
+  await expect(page.locator('.day-chip[data-date="2026-10-27"]')).toHaveClass(/on/);
+  await page.locator('.day-chip[data-date="2026-10-28"]').click();
+  await page.locator('.day-chip[data-date="2026-10-29"]').click();
+  await expect(page.locator("#daysCount")).toHaveText("3 dias selecionados");
+
+  await page.locator('[data-action="mday-next"]').click();
+  await expect(page.locator(".days-range")).toHaveText("01/11 a 07/11");
+  await page.locator('.day-chip[data-date="2026-11-03"]').click();
+  await expect(page.locator("#daysCount")).toHaveText("4 dias selecionados");
+  await page.locator('[data-action="mday-prev"]').click();
+  await expect(page.locator(".days-range")).toHaveText("25/10 a 31/10");
+  await expect(page.locator("#daysCount")).toHaveText("4 dias selecionados");
+  await page.locator('.day-chip[data-date="2026-10-29"]').click();
+  await expect(page.locator("#daysCount")).toHaveText("3 dias selecionados");
+
+  await page.locator('input[name="modal-obra"][value="porto"]').check();
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toHaveText("3 marcações adicionadas.");
+  const calls = state.requests.filter(function (r) { return r.body.op === "addMany"; });
+  expect(calls).toHaveLength(1);
+  expect(calls[0].body.items.map(function (i) { return i.date; })).toEqual(["2026-10-27", "2026-10-28", "2026-11-03"]);
+  await expect(page.locator('.day-card[data-date="2026-10-28"] .entry-chip')).toHaveCount(1);
+});
+
+test("a meeting needs start and end; the end is prefilled with start + 1 hour", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: [] });
+  await openDay(page);
+  await page.locator('input[name="modal-obra"][value="almada"]').check();
+  const box = page.locator('.obra-extra[data-obra="almada"]');
+  await expect(box.locator(".meet-times")).toBeHidden();
+  await box.locator(".meet-on").check();
+  await expect(box.locator(".meet-times")).toBeVisible();
+
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toContainText("início e o fim");
+  expect(state.requests.filter(function (r) { return r.body.op === "addMany"; })).toHaveLength(0);
+
+  await box.locator(".meet-start").fill("14:00");
+  await expect(box.locator(".meet-end")).toHaveValue("15:00");
+  await box.locator(".meet-end").fill("13:00");
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toContainText("início e o fim");
+
+  await box.locator(".meet-end").fill("15:30");
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toHaveText("1 marcação adicionada.");
+  const call = state.requests.filter(function (r) { return r.body.op === "addMany"; })[0];
+  expect(call.body.items[0].meeting).toEqual({ start: "14:00", end: "15:30" });
+  await expect(page.locator('.day-card[data-date="' + DAY + '"] .chip-meeting')).toHaveText("14:00–15:30");
+});
+
+test("the same meeting applies to every selected day", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: [] });
+  await openDay(page);
+  await page.locator('.day-chip[data-date="2026-10-28"]').click();
+  await page.locator('input[name="modal-obra"][value="porto"]').check();
+  const box = page.locator('.obra-extra[data-obra="porto"]');
+  await box.locator(".meet-on").check();
+  await box.locator(".meet-start").fill("09:00");
+  await page.locator("#addBtn").click();
+  await expect(page.locator("#toast")).toHaveText("2 marcações adicionadas.");
+  const items = state.requests.filter(function (r) { return r.body.op === "addMany"; })[0].body.items;
+  expect(items.map(function (i) { return i.meeting; })).toEqual([{ start: "09:00", end: "10:00" }, { start: "09:00", end: "10:00" }]);
+});
+
+test("the day detail shows the meeting, and editing changes comment and meeting", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: MIX });
+  await openDay(page);
+  await expect(page.locator("#modal .entry-chip", { hasText: "Jean" })).toContainText("Reunião 14:00–15:30");
+  await page.locator('#modal .edit[data-id="m1"]').click();
+  const form = page.locator(".comment-edit");
+  await expect(form.locator('input[name="comment"]')).toHaveValue("vistoria");
+  await expect(form.locator(".meet-on")).toBeChecked();
+  await expect(form.locator(".meet-start")).toHaveValue("14:00");
+  await form.locator('input[name="comment"]').fill("pauta nova");
+  await form.locator(".meet-end").fill("16:00");
+  await form.locator('button[type="submit"]').click();
+  await expect(page.locator("#toast")).toHaveText("Comentário salvo.");
+  const call = state.requests.filter(function (r) { return r.body.op === "update"; })[0];
+  expect(call.body).toEqual({ op: "update", id: "m1", comment: "pauta nova", meeting: { start: "14:00", end: "16:00" } });
+  await expect(page.locator("#modal .entry-chip", { hasText: "Jean" })).toContainText("14:00–16:00");
+});
+
+test("unchecking the meeting while editing removes it", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: MIX });
+  await openDay(page);
+  await page.locator('#modal .edit[data-id="m1"]').click();
+  await page.locator(".comment-edit .meet-on").uncheck();
+  await page.locator('.comment-edit button[type="submit"]').click();
+  await expect(page.locator("#toast")).toHaveText("Comentário salvo.");
+  const call = state.requests.filter(function (r) { return r.body.op === "update"; })[0];
+  expect(call.body.meeting).toBe(null);
+  expect(state.entries[0].meeting).toBeUndefined();
+});
+
+test("the meeting time sits next to the name in the Por obra view", async ({ page }) => {
+  await openApp(page, { entries: MIX });
+  await page.locator('[data-group="obra"]').click();
+  await expect(page.locator('.day-card[data-date="' + DAY + '"] .obra-card .chip-meeting')).toHaveText("14:00–15:30");
+});
+
+test("background refresh keeps what the person is typing in the add form", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: [] });
+  await openDay(page);
+  await page.locator('input[name="modal-obra"][value="porto"]').check();
+  await page.locator('.obra-comment[data-obra="porto"]').fill("pauta da reunião");
+  state.entries.push({ id: "x1", date: DAY, person: "haniel", obra: "almada", createdAt: "y" });
+  await page.clock.fastForward(26000);
+  await expect(page.locator("#modal .current-list")).toContainText("Haniel");
+  await expect(page.locator('input[name="modal-obra"][value="porto"]')).toBeChecked();
+  await expect(page.locator('.obra-comment[data-obra="porto"]')).toHaveValue("pauta da reunião");
+});
+
+test("background refresh does not touch an open edit form", async ({ page }) => {
+  const state = await openApp(page, { me: "jean", entries: MIX });
+  await openDay(page);
+  await page.locator('#modal .edit[data-id="m1"]').click();
+  await page.locator('.comment-edit input[name="comment"]').fill("rascunho");
+  state.entries.push({ id: "x2", date: DAY, person: "bruna", obra: "tulipas", createdAt: "y" });
+  await page.clock.fastForward(26000);
+  await expect(page.locator('.day-card[data-date="' + DAY + '"] .entry-chip')).toHaveCount(3);
+  await expect(page.locator('.comment-edit input[name="comment"]')).toHaveValue("rascunho");
+});

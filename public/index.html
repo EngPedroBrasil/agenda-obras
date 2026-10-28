@@ -420,7 +420,33 @@
     padding: 5px 10px; border-radius: 8px; cursor: pointer; font-weight: 700; font-size: 12px;
   }
   .btn-mini.primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
-  .obra-opt .obra-comment { margin: 2px 0 8px 40px; width: calc(100% - 40px); }
+  .obra-extra { margin: 2px 0 10px 40px; display: flex; flex-direction: column; gap: 6px; }
+  .obra-extra[hidden] { display: none; }
+  .obra-extra .obra-comment { margin: 0; width: 100%; }
+  .acting-as { margin: 0 0 6px; font-size: 13.5px; }
+  .meet-block { display: flex; flex-direction: column; gap: 6px; }
+  .meet-toggle { display: flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); cursor: pointer; }
+  .meet-times { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-soft); }
+  .meet-times[hidden] { display: none; }
+  .meet-times input[type="time"] {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px 8px; color: var(--ink); font: inherit; font-size: 13px;
+  }
+  .chip-meeting { display: block; font-size: 11px; font-weight: 700; color: var(--ink); }
+  .obra-card .chip-meeting { display: inline; margin-left: 2px; }
+  .chip-detail .chip-meeting { font-size: 12px; margin-bottom: 2px; }
+  .days-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .days-range { font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+  .days-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .day-chip {
+    border: 1.5px solid var(--border); background: var(--surface); color: var(--ink-soft); border-radius: 9px;
+    padding: 6px 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 1px;
+    font-size: 11px; font-weight: 700;
+  }
+  .day-chip strong { font-size: 14px; color: var(--ink); }
+  .day-chip.on { border-color: var(--accent); background: var(--accent-soft); }
+  .day-chip.origin { box-shadow: inset 0 -3px 0 var(--accent); }
+  .days-count { margin: 6px 0 0; font-size: 12px; color: var(--ink-faint); }
   .add-row {
     border: 1.5px dashed var(--border);
     background: transparent;
@@ -919,6 +945,8 @@
   var selectedObras = {};
   var modalDateKey = null;
   var editingEntryId = null;
+  var modalDays = {};         // dias marcados no seletor do modal: { "AAAA-MM-DD": true }
+  var modalWeekStart = null;  // domingo (Date) da semana mostrada no seletor
   var groupBy = "person"; // "person" | "obra" (week view only)
   var attentionPeriod = "month"; // "month" | "30" | "60" | "90" (Atenção view only)
 
@@ -978,32 +1006,78 @@
     return capFirst(MONTH_NAMES[cursor.getMonth()] + " de " + cursor.getFullYear());
   }
 
-  // detailed=false: compact chip for the calendar (comment shown as an icon).
-  // detailed=true: chip for the day modal (full comment text + edit button).
+  function canEditPerson(pid) {
+    return !!me && !me.mustChange && (me.role === "admin" || me.id === pid);
+  }
+
+  function plusOneHour(hhmm) {
+    var parts = hhmm.split(":");
+    var hour = Number(parts[0]) + 1;
+    return hour > 23 ? "23:59" : pad(hour) + ":" + parts[1];
+  }
+
+  // "Tem reunião" + start/end inputs. `meeting` ({start,end}) prefills them when editing.
+  function meetingFieldsHTML(meeting) {
+    var on = !!meeting;
+    return '<div class="meet-block">' +
+      '<label class="meet-toggle"><input type="checkbox" class="meet-on" style="accent-color:var(--accent)"' + (on ? " checked" : "") + "> Tem reunião</label>" +
+      '<div class="meet-times"' + (on ? "" : " hidden") + ">" +
+      '<input type="time" class="meet-start" aria-label="Início da reunião" value="' + (on ? h(meeting.start) : "") + '">' +
+      "<span>até</span>" +
+      '<input type="time" class="meet-end" aria-label="Fim da reunião" value="' + (on ? h(meeting.end) : "") + '">' +
+      "</div></div>";
+  }
+
+  // Reads the meeting fields inside `box`: { ok: true, meeting: null | {start,end} } or { ok: false }.
+  function readMeeting(box) {
+    var on = box.querySelector(".meet-on");
+    if (!on || !on.checked) return { ok: true, meeting: null };
+    var start = box.querySelector(".meet-start").value;
+    var end = box.querySelector(".meet-end").value;
+    if (!start || !end || end <= start) return { ok: false };
+    return { ok: true, meeting: { start: start, end: end } };
+  }
+
+  function editFormHTML(en) {
+    return '<div class="chip-detail"><form class="comment-edit" data-id="' + en.id + '">' +
+      '<input type="text" name="comment" maxlength="140" value="' + h(en.comment || "") + '" placeholder="O que vai fazer lá?" aria-label="Comentário">' +
+      meetingFieldsHTML(en.meeting) +
+      '<div class="comment-edit-actions"><button type="submit" class="btn-mini primary">Salvar</button>' +
+      '<button type="button" class="btn-mini" data-action="cancel-edit-comment">Cancelar</button></div></form></div>';
+  }
+
+  // detailed=false: compact chip for the calendar (comment as an icon, meeting as a line).
+  // detailed=true: chip for the day modal (full comment, meeting, edit form).
+  // The remove and edit buttons only exist for the owner of the entry and for the administrator.
   function entryChipHTML(en, detailed) {
     var obra = obraById[en.obra], person = personById[en.person];
     if (!obra || !person) return "";
+    var canEdit = canEditPerson(en.person);
+    var clock = MeetingFormat.formatMeetingClock(en.meeting);
     var badge = "", detail = "", editBtn = "";
+    var rmBtn = canEdit
+      ? '<button class="rm" data-action="remove-entry" data-id="' + en.id + '" title="Remover" aria-label="Remover">&times;</button>'
+      : "";
     if (detailed) {
-      editBtn = '<button class="edit" data-action="edit-comment" data-id="' + en.id + '" title="Editar comentário" aria-label="Editar comentário">&#9998;</button>';
-      if (editingEntryId === en.id) {
-        detail = '<div class="chip-detail"><form class="comment-edit" data-id="' + en.id + '">' +
-          '<input type="text" maxlength="140" value="' + h(en.comment || "") + '" placeholder="O que vai fazer lá?" aria-label="Comentário">' +
-          '<div class="comment-edit-actions"><button type="submit" class="btn-mini primary">Salvar</button>' +
-          '<button type="button" class="btn-mini" data-action="cancel-edit-comment">Cancelar</button></div></form></div>';
-      } else if (en.comment) {
-        detail = '<div class="chip-detail"><span class="chip-comment-text">' + h(en.comment) + '</span></div>';
+      if (canEdit) {
+        editBtn = '<button class="edit" data-action="edit-comment" data-id="' + en.id + '" title="Editar" aria-label="Editar">&#9998;</button>';
+      }
+      if (canEdit && editingEntryId === en.id) {
+        detail = editFormHTML(en);
+      } else if (en.comment || clock) {
+        detail = '<div class="chip-detail">' +
+          (clock ? '<span class="chip-meeting">&#128337; Reunião ' + clock + "</span>" : "") +
+          (en.comment ? '<span class="chip-comment-text">' + h(en.comment) + "</span>" : "") + "</div>";
       }
     } else if (en.comment) {
       badge = '<span class="chip-comment" title="' + h(en.comment) + '" aria-label="Comentário: ' + h(en.comment) + '">&#128172;</span>';
     }
     return '<div class="entry-chip" style="--chip-color:' + obra.color + '">' +
       '<img src="' + obra.icon + '" alt="">' +
-      '<span class="chip-text"><span class="chip-name" title="' + h(person.name) + '">' + h(person.name) + '</span><span class="chip-obra" title="' + h(obra.name) + '">' + h(obra.shortName || obra.name) + '</span></span>' +
-      badge + editBtn +
-      '<button class="rm" data-action="remove-entry" data-id="' + en.id + '" title="Remover" aria-label="Remover">&times;</button>' +
-      detail +
-      "</div>";
+      '<span class="chip-text"><span class="chip-name" title="' + h(person.name) + '">' + h(person.name) + "</span>" +
+      '<span class="chip-obra" title="' + h(obra.name) + '">' + h(obra.shortName || obra.name) + "</span>" +
+      (!detailed && clock ? '<span class="chip-meeting">' + clock + "</span>" : "") + "</span>" +
+      badge + editBtn + rmBtn + detail + "</div>";
   }
 
   function holidayPillsHTML(list) {
@@ -1031,7 +1105,8 @@
         var badge = p.comment
           ? '<span class="chip-comment" title="' + h(p.comment) + '" aria-label="Comentário: ' + h(p.comment) + '">&#128172;</span>'
           : "";
-        return h(personById[p.person].name) + badge;
+        var clock = MeetingFormat.formatMeetingClock(p.meeting);
+        return h(personById[p.person].name) + (clock ? ' <span class="chip-meeting">' + clock + "</span>" : "") + badge;
       }).join(", ");
       return '<div class="entry-chip obra-card" style="--chip-color:' + obra.color + '">' +
         '<img src="' + obra.icon + '" alt="">' +
@@ -1196,83 +1271,136 @@
     paintModalList();
   }
 
+  function obraOptionsHTML() {
+    return OBRAS.map(function (o) {
+      return '<div class="obra-opt"><label class="opt-row"><input type="checkbox" name="modal-obra" value="' + o.id + '" style="accent-color:var(--accent)">' +
+        '<img src="' + o.icon + '" alt=""><span class="opt-label">' + h(o.name) + '<div class="opt-sub">' + h(o.city) + "</div></span></label>" +
+        '<div class="obra-extra" data-obra="' + o.id + '" hidden>' +
+        '<input type="text" class="obra-comment" data-obra="' + o.id + '" maxlength="140" placeholder="O que vai fazer lá? (opcional)" aria-label="Comentário para ' + h(o.name) + '">' +
+        meetingFieldsHTML(null) + "</div></div>";
+    }).join("");
+  }
+
+  function addAreaHTML() {
+    if (!me) {
+      return '<p class="modal-sub">Entre com o seu nome e senha para marcar a sua presença.</p>' +
+        '<button type="button" class="btn btn-primary" data-action="open-login">Entrar para marcar</button>';
+    }
+    if (me.mustChange) {
+      return '<p class="modal-sub">Troque a sua senha para poder marcar.</p>' +
+        '<button type="button" class="btn btn-primary" data-action="open-change">Trocar senha</button>';
+    }
+    var who = me.role === "admin"
+      ? '<label class="field"><span>Marcando como</span><select id="actAs" name="act-as">' + TEAM.map(function (p) {
+          return '<option value="' + p.id + '"' + (p.id === me.id ? " selected" : "") + ">" + h(p.name) + "</option>";
+        }).join("") + "</select></label>"
+      : '<p class="acting-as">Marcando como <strong>' + h(me.name) + "</strong></p>";
+    return '<form id="addForm">' + who +
+      '<div class="modal-section-title">Obra(s)</div><div class="check-list">' + obraOptionsHTML() + "</div>" +
+      '<div class="modal-section-title">Dias</div><div id="daysPicker" class="days-picker"></div>' +
+      '<button type="submit" class="btn btn-primary" id="addBtn" disabled>Adicionar</button></form>';
+  }
+
+  function daysPickerHTML() {
+    var start = modalWeekStart, end = addDays(start, 6), chips = [];
+    for (var i = 0; i < 7; i++) {
+      var d = addDays(start, i), key = dateKey(d), on = !!modalDays[key];
+      chips.push('<button type="button" class="day-chip' + (on ? " on" : "") + (key === modalDateKey ? " origin" : "") +
+        '" data-action="toggle-mday" data-date="' + key + '" aria-pressed="' + on + '"><span>' + WEEKDAY_SHORT[i] + "</span><strong>" + d.getDate() + "</strong></button>");
+    }
+    return '<div class="days-nav"><button type="button" class="btn-mini" data-action="mday-prev" aria-label="Semana anterior">&#8249;</button>' +
+      '<span class="days-range">' + pad(start.getDate()) + "/" + pad(start.getMonth() + 1) + " a " + pad(end.getDate()) + "/" + pad(end.getMonth() + 1) + "</span>" +
+      '<button type="button" class="btn-mini" data-action="mday-next" aria-label="Próxima semana">&#8250;</button></div>' +
+      '<div class="days-strip">' + chips.join("") + "</div>" +
+      '<p class="days-count" id="daysCount"></p>';
+  }
+
+  // Enables the add button and shows the extra fields of the checked obras. Never rebuilds the form.
+  function updateAddBtn() {
+    var form = document.getElementById("addForm");
+    if (!form) return;
+    var obras = form.querySelectorAll('input[name="modal-obra"]:checked').length;
+    var days = Object.keys(modalDays).length;
+    document.getElementById("addBtn").disabled = !(obras && days);
+    form.querySelectorAll('input[name="modal-obra"]').forEach(function (cb) {
+      var extra = form.querySelector('.obra-extra[data-obra="' + cb.value + '"]');
+      if (extra) extra.hidden = !cb.checked;
+    });
+    var count = document.getElementById("daysCount");
+    if (count) count.textContent = days === 1 ? "1 dia selecionado" : days + " dias selecionados";
+  }
+  function repaintDaysPicker() {
+    var box = document.getElementById("daysPicker");
+    if (box) box.innerHTML = daysPickerHTML();
+    updateAddBtn();
+  }
+
+  function submitAddForm(ev) {
+    ev.preventDefault();
+    var form = ev.target;
+    var person = form.elements["act-as"] ? form.elements["act-as"].value : me.id;
+    var days = Object.keys(modalDays).sort();
+    var checks = Array.prototype.slice.call(form.querySelectorAll('input[name="modal-obra"]:checked'));
+    if (!checks.length || !days.length) return;
+    var specs = [];
+    for (var i = 0; i < checks.length; i++) {
+      var extra = form.querySelector('.obra-extra[data-obra="' + checks[i].value + '"]');
+      var meet = readMeeting(extra);
+      if (!meet.ok) { showToast("Informe o início e o fim da reunião (o fim precisa ser depois do início)."); return; }
+      specs.push({ obra: checks[i].value, comment: extra.querySelector(".obra-comment").value.trim(), meeting: meet.meeting });
+    }
+    var items = [];
+    days.forEach(function (day) {
+      specs.forEach(function (s) {
+        var item = { date: day, person: person, obra: s.obra };
+        if (s.comment) item.comment = s.comment;
+        if (s.meeting) item.meeting = s.meeting;
+        items.push(item);
+      });
+    });
+    if (items.length > 60) { showToast("No máximo 60 marcações por vez. Escolha menos dias ou obras."); return; }
+    var btn = document.getElementById("addBtn");
+    btn.disabled = true;
+    btn.textContent = "Adicionando…";
+    submitAddMany(items).then(function () {
+      modalDays = {};
+      modalDays[modalDateKey] = true;
+      modalWeekStart = startOfWeek(parseKey(modalDateKey));
+      renderModal();
+      renderCalendar();
+      showToast(items.length === 1 ? "1 marcação adicionada." : items.length + " marcações adicionadas.");
+    }).catch(function (err) {
+      showToast(describeError(err, "Não foi possível salvar agora. Tente de novo."));
+      btn.disabled = false;
+      btn.textContent = "Adicionar";
+    });
+  }
+
   function renderModal() {
     var overlay = document.getElementById("overlay");
     if (!modalDateKey) { editingEntryId = null; overlay.classList.remove("show"); return; }
     var d = parseKey(modalDateKey);
-    var dayEntries = entriesForDate(modalDateKey);
     var hol = holidaysForDate(d);
     var weekdayFull = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado"][d.getDay()];
     var label = capFirst(weekdayFull + ", " + d.getDate() + " de " + MONTH_NAMES[d.getMonth()]);
-
-    var currentHTML = currentListHTML(modalDateKey);
-
-    var personOptions = TEAM.map(function (p) {
-      return '<label class="opt-row"><input type="radio" name="modal-person" value="' + p.id + '" style="accent-color:var(--accent)">' +
-        '<span class="avatar">' + initials(p.name) + '</span><span class="opt-label">' + h(p.name) + '<div class="opt-sub">' + h(p.role) + '</div></span></label>';
-    }).join("");
-
-    var obraOptions = OBRAS.map(function (o) {
-      return '<div class="obra-opt"><label class="opt-row"><input type="checkbox" name="modal-obra" value="' + o.id + '" style="accent-color:var(--accent)">' +
-        '<img src="' + o.icon + '" alt=""><span class="opt-label">' + h(o.name) + '<div class="opt-sub">' + h(o.city) + '</div></span></label>' +
-        '<input type="text" class="obra-comment" data-obra="' + o.id + '" maxlength="140" placeholder="O que vai fazer lá? (opcional)" aria-label="Comentário para ' + h(o.name) + '" hidden></div>';
-    }).join("");
-
+    if (!modalWeekStart) modalWeekStart = startOfWeek(d);
     var holHTML = hol.length ? holidayPillsHTML(hol) + '<p class="modal-sub" style="margin-top:6px">' + hol.map(function (x) { return h(x.label); }).join(" · ") + "</p>" : "";
 
     document.getElementById("modal").innerHTML =
       '<div class="modal-head"><div><h2>' + h(label) + '</h2></div><button class="close-x" data-action="close-modal" aria-label="Fechar">&times;</button></div>' +
       holHTML +
       '<div class="modal-section-title">Marcados neste dia</div>' +
-      '<div class="current-list">' + currentHTML + "</div>" +
+      '<div class="current-list">' + currentListHTML(modalDateKey) + "</div>" +
       '<div class="modal-section-title">Adicionar presença</div>' +
-      '<form id="addForm">' +
-      '<div class="radio-list">' + personOptions + '</div>' +
-      '<div class="modal-section-title">Obra(s)</div>' +
-      '<div class="check-list">' + obraOptions + '</div>' +
-      '<button type="submit" class="btn btn-primary" id="addBtn" disabled>Adicionar</button>' +
-      "</form>";
-
+      addAreaHTML();
     overlay.classList.add("show");
 
     var form = document.getElementById("addForm");
-    var addBtn = document.getElementById("addBtn");
-    function refreshBtn() {
-      var person = form.querySelector('input[name="modal-person"]:checked');
-      var obras = form.querySelectorAll('input[name="modal-obra"]:checked');
-      addBtn.disabled = !(person && obras.length);
-      form.querySelectorAll('input[name="modal-obra"]').forEach(function (cb) {
-        var box = form.querySelector('.obra-comment[data-obra="' + cb.value + '"]');
-        if (box) box.hidden = !cb.checked;
-      });
+    if (form) {
+      repaintDaysPicker();
+      form.addEventListener("change", updateAddBtn);
+      form.addEventListener("submit", submitAddForm);
     }
-    form.addEventListener("change", refreshBtn);
-    form.addEventListener("submit", function (ev) {
-      ev.preventDefault();
-      var person = form.querySelector('input[name="modal-person"]:checked');
-      var obras = form.querySelectorAll('input[name="modal-obra"]:checked');
-      if (!person || !obras.length) return;
-      addBtn.disabled = true;
-      addBtn.textContent = "Adicionando…";
-      var dateKeyToAdd = modalDateKey;
-      var personId = person.value;
-      var obraIds = Array.prototype.map.call(obras, function (cb) { return cb.value; });
-      var chain = Promise.resolve();
-      obraIds.forEach(function (obraId) {
-        var box = form.querySelector('.obra-comment[data-obra="' + obraId + '"]');
-        var comment = box ? box.value.trim() : "";
-        chain = chain.then(function () { return submitAdd(dateKeyToAdd, personId, obraId, comment); });
-      });
-      chain.then(function () {
-        renderModal();
-        renderCalendar();
-        showToast("Presença adicionada.");
-      }).catch(function (err) {
-        showToast(describeError(err, "Não foi possível salvar agora. Tente de novo."));
-        addBtn.disabled = false;
-        addBtn.textContent = "Adicionar";
-      });
-    });
   }
 
   function render() {
@@ -1610,7 +1738,17 @@
       renderPeopleFilters(); renderObraFilters(); renderCalendar();
     } else if (action === "open-day") {
       modalDateKey = el.getAttribute("data-date");
+      modalDays = {};
+      modalDays[modalDateKey] = true;
+      modalWeekStart = startOfWeek(parseKey(modalDateKey));
       renderModal();
+    } else if (action === "toggle-mday") {
+      var mday = el.getAttribute("data-date");
+      if (modalDays[mday]) delete modalDays[mday]; else modalDays[mday] = true;
+      repaintDaysPicker();
+    } else if (action === "mday-prev" || action === "mday-next") {
+      modalWeekStart = addDays(modalWeekStart, action === "mday-prev" ? -7 : 7);
+      repaintDaysPicker();
     } else if (action === "close-modal") {
       modalDateKey = null;
       renderModal();
@@ -1674,8 +1812,9 @@
     if (!editForm) return;
     ev.preventDefault();
     var id = editForm.getAttribute("data-id");
-    var text = editForm.querySelector("input").value.trim();
-    submitUpdate(id, { comment: text }).then(function () {
+    var meet = readMeeting(editForm);
+    if (!meet.ok) { showToast("Informe o início e o fim da reunião (o fim precisa ser depois do início)."); return; }
+    submitUpdate(id, { comment: editForm.elements.comment.value.trim(), meeting: meet.meeting }).then(function () {
       editingEntryId = null;
       paintModalList();
       renderCalendar();
@@ -1689,6 +1828,17 @@
         showToast(describeError(err, "Não foi possível salvar agora. Tente de novo."));
       }
     });
+  });
+  document.addEventListener("change", function (ev) {
+    var t = ev.target;
+    if (t.classList.contains("meet-on")) {
+      t.closest(".meet-block").querySelector(".meet-times").hidden = !t.checked;
+    } else if (t.classList.contains("meet-start")) {
+      var end = t.closest(".meet-block").querySelector(".meet-end");
+      if (t.value && (!end.value || end.dataset.auto === "1")) { end.value = plusOneHour(t.value); end.dataset.auto = "1"; }
+    } else if (t.classList.contains("meet-end")) {
+      t.dataset.auto = "";
+    }
   });
   document.addEventListener("submit", function (ev) {
     if (ev.target.id === "loginForm") { ev.preventDefault(); doLogin(ev.target); }
