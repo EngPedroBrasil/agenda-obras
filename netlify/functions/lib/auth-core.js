@@ -1,7 +1,7 @@
 "use strict";
 
-const { PEOPLE, ADMIN_IDS } = require("./people");
-const { seedUsers } = require("./users-logic");
+const { PEOPLE, ADMIN_IDS, MANAGERS } = require("./people");
+const { seedUsers, ensureManagers, effectiveRole } = require("./users-logic");
 const S = require("./session");
 const { isLocalEnv } = require("./store");
 
@@ -67,7 +67,7 @@ function json(status, body, extraHeaders) {
 function resolveUserId(input) {
   if (typeof input !== "string") return null;
   const id = input.trim().toLowerCase();
-  return PEOPLE.some(function (p) { return p.id === id; }) ? id : null;
+  return PEOPLE.concat(MANAGERS).some(function (p) { return p.id === id; }) ? id : null;
 }
 
 async function readUsers(store) {
@@ -75,12 +75,16 @@ async function readUsers(store) {
 }
 
 async function loadUsers(store, settings) {
-  let users = await readUsers(store);
+  const users = await readUsers(store);
   if (!users) {
-    users = seedUsers(settings.initialPassword, PEOPLE, ADMIN_IDS);
-    await store.setJSON(USERS_KEY, users);
+    const fresh = seedUsers(settings.initialPassword, PEOPLE, ADMIN_IDS, MANAGERS);
+    await store.setJSON(USERS_KEY, fresh);
+    return fresh;
   }
-  return users;
+  // Cadastro criado antes do gestor existir: completa uma única vez.
+  const complete = ensureManagers(users, settings.initialPassword, MANAGERS);
+  if (complete !== users) await store.setJSON(USERS_KEY, complete);
+  return complete;
 }
 
 function currentUser(event, users, settings) {
@@ -91,6 +95,12 @@ function currentUser(event, users, settings) {
   return rec.pv === payload.pv ? rec : null;
 }
 
+// Quem age agora: o mesmo registro, mas com o papel EFETIVO (admin fora do modo administrador vale "user").
+function actingUser(event, users, settings) {
+  const rec = currentUser(event, users, settings);
+  return rec ? Object.assign({}, rec, { role: effectiveRole(rec, settings.now()) }) : null;
+}
+
 function sessionCookieFor(rec, settings) {
   const token = S.signSession({ u: rec.id, pv: rec.pv, exp: settings.now() + S.MAX_AGE_SECONDS * 1000 }, settings.secret);
   return S.buildCookie(token, { secure: settings.secure });
@@ -98,5 +108,5 @@ function sessionCookieFor(rec, settings) {
 
 module.exports = {
   USERS_KEY, readSettings, configProblem, header, readJsonBody, json,
-  resolveUserId, readUsers, loadUsers, currentUser, sessionCookieFor
+  resolveUserId, readUsers, loadUsers, currentUser, actingUser, sessionCookieFor
 };

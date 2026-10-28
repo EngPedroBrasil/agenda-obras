@@ -70,7 +70,7 @@ test("first login seeds the users when none exist", async function () {
   assert.equal(res.status, 200);
   assert.equal(res.body.user.role, "user");
   assert.equal(res.body.user.canElevate, true);
-  assert.equal(Object.keys(store.data.users).length, 5);
+  assert.equal(Object.keys(store.data.users).length, 6);
 });
 
 test("login reports a configuration problem instead of failing silently", async function () {

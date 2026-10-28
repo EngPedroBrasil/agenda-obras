@@ -58,13 +58,13 @@ test("currentUser accepts a valid cookie and rejects tampering, expiry and a sta
   assert.equal(A.currentUser(good, gone, settings), null);
 });
 
-test("loadUsers seeds the five users on the first call and reuses them afterwards", async function () {
+test("loadUsers seeds the five people and the manager on the first call and reuses them afterwards", async function () {
   const { makeFakeStore } = require("./helpers/fake-store");
   const store = makeFakeStore([], {});
   const settings = A.readSettings(H.OPTS);
   assert.equal(await A.readUsers(store), null);
   const first = await A.loadUsers(store, settings);
-  assert.deepEqual(Object.keys(first), ["pedro", "jean", "haniel", "gustavo", "bruna"]);
+  assert.deepEqual(Object.keys(first), ["pedro", "jean", "haniel", "gustavo", "bruna", "leonardo"]);
   assert.deepEqual(store.data.users, first);
   const second = await A.loadUsers(store, settings);
   assert.deepEqual(second, first);
