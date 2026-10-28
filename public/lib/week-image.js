@@ -94,7 +94,9 @@
     var innerX = x + 5 + 9, innerW = w - 5 - 9 - 9;
     var lines = [];
     if (item.comment) { font(ctx, 400, 13, true); lines = wrap(ctx, item.comment, innerW); }
-    var h = 9 + 21 + 18 + (lines.length ? 4 + lines.length * 17 : 0) + 9;
+    var clock = item.meeting ? root.MeetingFormat.formatMeetingClock(item.meeting) : "";
+    var head = 9 + 21 + 18 + (clock ? 17 : 0);
+    var h = head + (lines.length ? 4 + lines.length * 17 : 0) + 9;
     if (!draw) return h;
     cardBackground(ctx, x, y, w, h, obra.color);
     circleImage(ctx, o.icons[item.obra], x + 5 + 9, y + 9, 22);
@@ -103,8 +105,9 @@
     ctx.fillText(person.name, textX, y + 9 + 16, textW);
     ctx.fillStyle = C.soft; font(ctx, 500, 14);
     ctx.fillText(obra.shortName || obra.name, textX, y + 9 + 21 + 13, textW);
+    if (clock) { ctx.fillStyle = C.ink; font(ctx, 700, 13); ctx.fillText(clock, innerX, y + 9 + 21 + 18 + 12, innerW); }
     ctx.fillStyle = C.soft; font(ctx, 400, 13, true);
-    lines.forEach(function (ln, i) { ctx.fillText(ln, innerX, y + 9 + 21 + 18 + 4 + 13 + i * 17); });
+    lines.forEach(function (ln, i) { ctx.fillText(ln, innerX, y + head + 4 + 13 + i * 17); });
     return h;
   }
 
@@ -113,7 +116,11 @@
     var innerX = x + 5 + 9, innerW = w - 5 - 9 - 9;
     var rows = group.people.map(function (p) {
       font(ctx, 400, 13, true);
-      return { name: o.personById[p.person].name, lines: p.comment ? wrap(ctx, p.comment, innerW) : [] };
+      return {
+        name: o.personById[p.person].name,
+        clock: p.meeting ? root.MeetingFormat.formatMeetingClock(p.meeting) : "",
+        lines: p.comment ? wrap(ctx, p.comment, innerW) : []
+      };
     });
     var h = 9 + 22 + 6;
     rows.forEach(function (r) { h += 20 + (r.lines.length ? r.lines.length * 17 : 0) + 4; });
@@ -128,6 +135,11 @@
     rows.forEach(function (r) {
       ctx.fillStyle = C.ink; font(ctx, 700, 15);
       ctx.fillText(r.name, innerX, cy + 15, innerW);
+      if (r.clock) {
+        var nameW = ctx.measureText(r.name).width;
+        ctx.fillStyle = C.soft; font(ctx, 500, 13);
+        ctx.fillText(r.clock, innerX + nameW + 8, cy + 15);
+      }
       cy += 20;
       ctx.fillStyle = C.soft; font(ctx, 400, 13, true);
       r.lines.forEach(function (ln) { ctx.fillText(ln, innerX, cy + 12); cy += 17; });
