@@ -474,6 +474,32 @@
   .month-avatars img { width: 16px; height: 16px; border-radius: 50%; }
   .month-more { font-size: 10.5px; color: var(--ink-faint); font-weight: 700; }
 
+  /* ---------- attention view ---------- */
+  .att-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .att-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 12px; line-height: 1.45; }
+  .att-scroll { overflow-x: auto; }
+  .att-table {
+    width: 100%; min-width: 760px; border-collapse: separate; border-spacing: 0;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    overflow: hidden; font-size: 13.5px;
+  }
+  .att-table th, .att-table td { padding: 10px 12px; text-align: center; border-bottom: 1px solid var(--border); }
+  .att-table th {
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--ink-faint); background: var(--surface-2);
+  }
+  .att-table th.att-obra, .att-table td.att-obra { text-align: left; }
+  .att-table tr:last-child td { border-bottom: none; }
+  .att-obra-cell { display: flex; align-items: center; gap: 8px; font-weight: 800; }
+  .att-obra-cell img { width: 22px; height: 22px; border-radius: 50%; }
+  .att-zero { color: var(--ink-faint); opacity: 0.55; }
+  .att-total { font-weight: 800; }
+  .att-sub { color: var(--ink-faint); font-size: 11.5px; font-weight: 600; margin-left: 4px; }
+  .att-alert td.att-obra { box-shadow: inset 4px 0 0 var(--danger); }
+  .att-bad { color: var(--danger); font-weight: 800; }
+  .att-sum td { background: var(--surface-2); font-weight: 800; }
+  .att-empty { font-size: 13px; color: var(--ink-faint); font-style: italic; }
+
   /* ---------- legend ---------- */
   .legend {
     margin-top: 26px;
@@ -631,6 +657,7 @@
     <div class="seg" id="viewSeg">
       <button data-action="set-view" data-view="week">Semana</button>
       <button data-action="set-view" data-view="month">M&ecirc;s</button>
+      <button data-action="set-view" data-view="attention">Aten&ccedil;&atilde;o</button>
     </div>
     <div class="arrows" id="arrowsBox">
       <button data-action="prev" aria-label="Anterior">&#8249;</button>
@@ -689,6 +716,7 @@
 <script src="lib/week-model.js"></script>
 <script src="lib/week-image.js"></script>
 <script src="lib/week-message.js"></script>
+<script src="lib/attention.js"></script>
 <script>
 (function () {
   "use strict";
@@ -856,6 +884,7 @@
   var modalDateKey = null;
   var editingEntryId = null;
   var groupBy = "person"; // "person" | "obra" (week view only)
+  var attentionPeriod = "month"; // "month" | "30" | "60" | "90" (Atenção view only)
 
   function anyFilterActive() {
     return Object.keys(selectedPeople).length > 0 || Object.keys(selectedObras).length > 0;
@@ -901,6 +930,7 @@
   }
 
   function periodLabel() {
+    if (view === "attention") return "Atenção por obra";
     if (view === "week") {
       var start = startOfWeek(cursor);
       var end = addDays(start, 6);
@@ -1027,12 +1057,73 @@
       '<div class="month-grid">' + cells.join("") + "</div>";
   }
 
+  /* ---------------- attention view ---------------- */
+  var ATTENTION_PERIODS = [["month", "Este mês"], ["30", "30 dias"], ["60", "60 dias"], ["90", "90 dias"]];
+
+  function daysAgoLabel(n) {
+    if (n === null) return "—";
+    if (n === 0) return "hoje";
+    return "há " + n + (n === 1 ? " dia" : " dias");
+  }
+  function dayMonthLabel(key) { var p = key.split("-"); return p[2] + "/" + p[1]; }
+  function pairHTML(c) {
+    return '<span class="' + (c.done ? "" : "att-zero") + '">' + c.done + '</span> / <span class="' + (c.planned ? "" : "att-zero") + '">' + c.planned + "</span>";
+  }
+
+  function renderAttention() {
+    var today = dateKey(new Date());
+    var anyObra = Object.keys(selectedObras).length > 0;
+    var anyPerson = Object.keys(selectedPeople).length > 0;
+    var obraIds = OBRAS.filter(function (o) { return !anyObra || selectedObras[o.id]; }).map(function (o) { return o.id; });
+    var peopleIds = TEAM.filter(function (p) { return !anyPerson || selectedPeople[p.id]; }).map(function (p) { return p.id; });
+    var result = Attention.buildAttention({
+      entries: entries.filter(entryVisible),
+      today: today,
+      periodStart: Attention.periodStartFor(today, attentionPeriod),
+      obraOrder: obraIds,
+      personOrder: peopleIds
+    });
+
+    var bar = '<div class="att-bar"><div class="seg" id="attPeriodSeg">' + ATTENTION_PERIODS.map(function (p) {
+      return '<button data-action="set-att-period" data-period="' + p[0] + '"' + (String(attentionPeriod) === p[0] ? ' class="active"' : "") + ">" + p[1] + "</button>";
+    }).join("") + "</div></div>";
+    var note = '<p class="att-note">Os números medem presença <strong>planejada</strong> (o que foi marcado na agenda), não confirmada. ' +
+      "Cada célula mostra <strong>realizado / planejado</strong>: o realizado conta do início do período escolhido até hoje; o planejado é tudo que já está marcado daqui para frente. " +
+      "“Última visita” ignora o período. Em vermelho: obra sem visita há mais de 14 dias ou sem nada planejado.</p>";
+    if (!result.rows.length) return bar + note + '<p class="att-empty">Nenhuma obra nos filtros escolhidos.</p>';
+
+    var head = '<tr><th class="att-obra">Obra</th>' +
+      peopleIds.map(function (pid) { return "<th>" + h(personById[pid].name) + "</th>"; }).join("") +
+      "<th>Total</th><th>Última visita</th><th>Próxima</th></tr>";
+
+    var totalDone = 0, totalPlanned = 0;
+    var body = result.rows.map(function (r) {
+      var obra = obraById[r.obra];
+      totalDone += r.done; totalPlanned += r.planned;
+      var alert = r.stale || r.noPlan;
+      return '<tr class="' + (alert ? "att-alert" : "") + '" data-obra="' + r.obra + '">' +
+        '<td class="att-obra"><div class="att-obra-cell"><img src="' + obra.icon + '" alt="">' + h(obra.shortName || obra.name) + "</div></td>" +
+        peopleIds.map(function (pid) { return '<td data-person="' + pid + '">' + pairHTML(r.byPerson[pid]) + "</td>"; }).join("") +
+        '<td class="att-total">' + pairHTML({ done: r.done, planned: r.planned }) + "</td>" +
+        '<td data-col="last" class="' + (r.stale ? "att-bad" : "") + '">' + daysAgoLabel(r.daysSinceLast) +
+          (r.lastVisit ? '<span class="att-sub">' + dayMonthLabel(r.lastVisit) + "</span>" : "") + "</td>" +
+        '<td data-col="next" class="' + (r.noPlan ? "att-bad" : "") + '">' + (r.nextVisit ? dayMonthLabel(r.nextVisit) : "Nada planejado") + "</td></tr>";
+    }).join("");
+
+    var sum = '<tr class="att-sum"><td class="att-obra">Total</td>' +
+      peopleIds.map(function (pid) { return '<td data-person="' + pid + '">' + pairHTML(result.personTotals[pid]) + "</td>"; }).join("") +
+      '<td class="att-total">' + pairHTML({ done: totalDone, planned: totalPlanned }) + "</td><td></td><td></td></tr>";
+
+    return bar + note + '<div class="att-scroll"><table class="att-table"><thead>' + head + "</thead><tbody>" + body + sum + "</tbody></table></div>";
+  }
+
   function renderCalendar() {
     document.getElementById("periodLabel").textContent = periodLabel();
-    document.getElementById("calendarArea").innerHTML = view === "week" ? renderWeek() : renderMonth();
+    document.getElementById("calendarArea").innerHTML = view === "week" ? renderWeek() : view === "month" ? renderMonth() : renderAttention();
     document.getElementById("viewSeg").querySelectorAll("button").forEach(function (b) {
       b.classList.toggle("active", b.getAttribute("data-view") === view);
     });
+    document.getElementById("arrowsBox").classList.toggle("is-off", view === "attention");
     document.getElementById("waBtn").classList.toggle("is-off", view !== "week");
     var groupSeg = document.getElementById("groupSeg");
     groupSeg.classList.toggle("is-off", view !== "week");
@@ -1320,6 +1411,9 @@
       renderCalendar();
     } else if (action === "set-view") {
       view = el.getAttribute("data-view");
+      renderCalendar();
+    } else if (action === "set-att-period") {
+      attentionPeriod = el.getAttribute("data-period");
       renderCalendar();
     } else if (action === "toggle-person") {
       var pid = el.getAttribute("data-id");
