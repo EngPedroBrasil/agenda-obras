@@ -495,3 +495,102 @@ test("the banner turns green when everybody closed the week, and follows backgro
   await expect(page.locator("#waBanner")).toContainText("Todos programaram a semana");
   await expect(page.locator("#waText")).not.toHaveValue(/programaram/);
 });
+
+// ---- Tarefa 25: administração -------------------------------------------------------------------
+
+const BACKUPS = [
+  {
+    id: "backup-2026-10-26", kind: "daily", label: "Diário de 26/10/2026",
+    entries: [{ id: "old1", date: DAY, person: "gustavo", obra: "tulipas", createdAt: "x" }], weeks: {}
+  },
+  { id: "backup-prerestore-2026-10-20T15-00-00-000Z", kind: "prerestore", label: "Antes de restaurar (20/10/2026 12:00)", entries: [], weeks: {} }
+];
+
+test("only the administrator sees the Administração item", async ({ page }) => {
+  await openApp(page, { me: "jean" });
+  await page.locator("#userBtn").click();
+  await expect(page.locator("#userMenu")).toBeVisible();
+  await expect(page.locator('#userMenu [data-action="open-admin"]')).toHaveCount(0);
+
+  const admin = await page.context().newPage();
+  await openApp(admin, { me: "pedro" });
+  await admin.locator("#userBtn").click();
+  await expect(admin.locator('#userMenu [data-action="open-admin"]')).toBeVisible();
+});
+
+test("the panel lists the people (no reset for yourself) and the backups", async ({ page }) => {
+  await openApp(page, { me: "pedro", backups: BACKUPS });
+  await page.locator("#userBtn").click();
+  await page.locator('[data-action="open-admin"]').click();
+  await expect(page.locator("#adminPanel")).toBeVisible();
+  await expect(page.locator(".admin-user")).toHaveCount(5);
+  await expect(page.locator('.admin-user[data-user="pedro"] [data-action="admin-reset"]')).toHaveCount(0);
+  await expect(page.locator('.admin-user[data-user="jean"] [data-action="admin-reset"]')).toHaveCount(1);
+  await expect(page.locator(".admin-backup")).toHaveCount(2);
+  await expect(page.locator('.admin-backup[data-id="backup-2026-10-26"]')).toContainText("Diário de 26/10/2026");
+});
+
+test("resetting a password needs a second click and never shows the initial password", async ({ page }) => {
+  const state = await openApp(page, { me: "pedro" });
+  await page.locator("#userBtn").click();
+  await page.locator('[data-action="open-admin"]').click();
+  await page.locator('.admin-user[data-user="jean"] [data-action="admin-reset"]').click();
+  await expect(page.locator('.admin-user[data-user="jean"]')).toContainText("Zerar a senha de Jean?");
+  expect(state.resetUsers).toEqual([]);
+
+  await page.locator('[data-action="admin-cancel"]').click();
+  await expect(page.locator('.admin-user[data-user="jean"] [data-action="admin-reset"]')).toHaveCount(1);
+  expect(state.resetUsers).toEqual([]);
+
+  await page.locator('.admin-user[data-user="jean"] [data-action="admin-reset"]').click();
+  await page.locator('[data-action="admin-reset-yes"]').click();
+  await expect(page.locator("#toast")).toContainText("Senha de Jean zerada");
+  await expect(page.locator("#toast")).not.toContainText("Mudar");
+  expect(state.resetUsers).toEqual(["jean"]);
+  await expect(page.locator('.admin-user[data-user="jean"] [data-action="admin-reset"]')).toHaveCount(1);
+});
+
+test("downloading the backup saves a dated JSON with entries and weeks, without users", async ({ page }) => {
+  await openApp(page, { me: "pedro", entries: MIX, confirmations: { "2026-10-25": { jean: "2026-10-27T15:00:00.000Z" } } });
+  await page.locator("#userBtn").click();
+  await page.locator('[data-action="open-admin"]').click();
+  const [download] = await Promise.all([
+    page.waitForEvent("download"),
+    page.locator('[data-action="admin-download"]').click()
+  ]);
+  expect(download.suggestedFilename()).toBe("agenda-obras-backup-2026-10-27.json");
+  const body = JSON.parse(require("fs").readFileSync(await download.path(), "utf8"));
+  expect(body.entries).toHaveLength(2);
+  expect(body.weeks["2026-10-25"].jean).toBeTruthy();
+  expect(body.users).toBeUndefined();
+});
+
+test("restoring a backup asks first, then reloads the calendar", async ({ page }) => {
+  const state = await openApp(page, { me: "pedro", entries: MIX, backups: BACKUPS });
+  await page.locator("#userBtn").click();
+  await page.locator('[data-action="open-admin"]').click();
+  await page.locator('.admin-backup[data-id="backup-2026-10-26"] [data-action="admin-restore"]').click();
+  await expect(page.locator('.admin-backup[data-id="backup-2026-10-26"]')).toContainText("substituídos");
+  expect(state.restored).toBe(null);
+
+  await page.locator('[data-action="admin-restore-yes"]').click();
+  await expect(page.locator("#toast")).toHaveText("Backup restaurado.");
+  expect(state.restored).toBe("backup-2026-10-26");
+
+  await page.locator('#authModal [data-action="close-auth"]').click();
+  await expect(page.locator("#authOverlay")).not.toHaveClass(/show/);
+  const chips = page.locator('.day-card[data-date="' + DAY + '"] .entry-chip');
+  await expect(chips).toHaveCount(1);
+  await expect(chips.first()).toContainText("Gustavo");
+});
+
+test("a failed restore shows the server message and keeps the data", async ({ page }) => {
+  const state = await openApp(page, { me: "pedro", entries: MIX, backups: BACKUPS });
+  await page.locator("#userBtn").click();
+  await page.locator('[data-action="open-admin"]').click();
+  await page.locator('.admin-backup[data-id="backup-2026-10-26"] [data-action="admin-restore"]').click();
+  state.backups = [];
+  await page.locator('[data-action="admin-restore-yes"]').click();
+  await expect(page.locator("#toast")).toHaveText("backup não encontrado");
+  await expect(page.locator('.day-card[data-date="' + DAY + '"] .entry-chip')).toHaveCount(2);
+});

@@ -458,6 +458,14 @@
   .wa-banner { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; }
   .wa-banner.ok { background: rgba(46, 158, 91, 0.16); color: var(--ink); }
   .wa-banner.warn { background: rgba(230, 160, 30, 0.2); color: var(--ink); }
+  .admin-row {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+    padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13.5px;
+  }
+  .admin-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12.5px; }
+  .admin-note { font-size: 12px; color: var(--ink-faint); }
+  .btn-mini.danger { background: #c0392b; border-color: transparent; color: #fff; }
+  #authModal .admin-actions { margin: 8px 0 4px; }
   .add-row {
     border: 1.5px dashed var(--border);
     background: transparent;
@@ -886,13 +894,13 @@
 
   function describeError(err, fallback) {
     if (err && err.status === 401) { onSessionLost(); return "Sua sessão expirou. Entre de novo."; }
-    if (err && (err.status === 400 || err.status === 403 || err.status === 429) && err.message) return err.message;
+    if (err && (err.status === 400 || err.status === 403 || err.status === 404 || err.status === 429) && err.message) return err.message;
     return fallback;
   }
   function onMeChanged() {
     userMenuOpen = false;
     if (me && me.mustChange) authMode = "change";
-    else if (!me && authMode === "change") authMode = null;
+    else if (!me && (authMode === "change" || authMode === "admin")) authMode = null;
     renderAuth();
     renderAuthModal();
     render();
@@ -1467,6 +1475,7 @@
     area.innerHTML = '<button class="today-btn" id="userBtn" data-action="toggle-user-menu" aria-haspopup="true" aria-expanded="' + userMenuOpen + '">' +
       h(me.name) + ' &#9662;</button>' +
       '<div class="user-menu" id="userMenu"' + (userMenuOpen ? "" : " hidden") + ">" +
+      (me.role === "admin" ? '<button data-action="open-admin">Administração</button>' : "") +
       '<button data-action="open-change">Trocar senha</button>' +
       '<button data-action="logout">Sair</button></div>';
   }
@@ -1503,9 +1512,9 @@
     var overlay = document.getElementById("authOverlay");
     var modal = document.getElementById("authModal");
     if (!authMode) { overlay.classList.remove("show"); modal.innerHTML = ""; return; }
-    var wanted = authMode === "login" ? "loginForm" : "changeForm";
+    var wanted = authMode === "login" ? "loginForm" : authMode === "admin" ? "adminPanel" : "changeForm";
     if (!modal.querySelector("#" + wanted)) {
-      modal.innerHTML = authMode === "login" ? loginHTML() : changeHTML();
+      modal.innerHTML = authMode === "login" ? loginHTML() : authMode === "admin" ? adminHTML() : changeHTML();
       var first = modal.querySelector("select, input");
       if (first) first.focus();
     }
@@ -1568,6 +1577,129 @@
       authMode = null;
       onMeChanged();
       showToast("Você saiu.");
+    });
+  }
+
+  /* ---------------- administration ---------------- */
+  var adminBackups = null;        // null = carregando
+  var adminBackupsError = "";
+  var adminConfirm = null;        // { kind: "reset" | "restore", id }
+
+  function adminInnerHTML() {
+    var people = TEAM.map(function (p) {
+      var right;
+      if (p.id === me.id) {
+        right = '<span class="admin-note">você</span>';
+      } else if (adminConfirm && adminConfirm.kind === "reset" && adminConfirm.id === p.id) {
+        right = '<span class="admin-confirm">Zerar a senha de ' + h(p.name) + "? " +
+          '<button type="button" class="btn-mini danger" data-action="admin-reset-yes" data-user="' + p.id + '">Sim, zerar</button>' +
+          '<button type="button" class="btn-mini" data-action="admin-cancel">Cancelar</button></span>';
+      } else {
+        right = '<button type="button" class="btn-mini" data-action="admin-reset" data-user="' + p.id + '">Zerar senha</button>';
+      }
+      return '<div class="admin-row admin-user" data-user="' + p.id + '"><span>' + h(p.name) + "</span>" + right + "</div>";
+    }).join("");
+
+    var backups;
+    if (adminBackups === null) {
+      backups = '<p class="modal-sub">Carregando…</p>';
+    } else if (adminBackupsError) {
+      backups = '<p class="form-error">' + h(adminBackupsError) + "</p>";
+    } else if (!adminBackups.length) {
+      backups = '<p class="modal-sub">Ainda não há backups automáticos. O primeiro é criado na primeira alteração do dia.</p>';
+    } else {
+      backups = adminBackups.map(function (b) {
+        var right;
+        if (adminConfirm && adminConfirm.kind === "restore" && adminConfirm.id === b.id) {
+          right = '<span class="admin-confirm">Os dados atuais serão substituídos (guardamos uma cópia antes). ' +
+            '<button type="button" class="btn-mini danger" data-action="admin-restore-yes" data-id="' + h(b.id) + '">Sim, restaurar</button>' +
+            '<button type="button" class="btn-mini" data-action="admin-cancel">Cancelar</button></span>';
+        } else {
+          right = '<button type="button" class="btn-mini" data-action="admin-restore" data-id="' + h(b.id) + '">Restaurar</button>';
+        }
+        return '<div class="admin-row admin-backup" data-id="' + h(b.id) + '"><span>' + h(b.label) + "</span>" + right + "</div>";
+      }).join("");
+    }
+
+    return '<div class="modal-section-title">Pessoas</div>' + people +
+      '<div class="modal-section-title">Backup</div>' +
+      '<div class="admin-actions"><button type="button" class="btn-mini primary" data-action="admin-download">Baixar backup (JSON)</button></div>' +
+      backups;
+  }
+
+  function adminHTML() {
+    return '<div class="modal-head"><div><h2>Administração</h2></div><button class="close-x" data-action="close-auth" aria-label="Fechar">&times;</button></div>' +
+      '<div id="adminPanel">' + adminInnerHTML() + "</div>";
+  }
+  function paintAdmin() {
+    var box = document.getElementById("adminPanel");
+    if (box && me && me.role === "admin") box.innerHTML = adminInnerHTML();
+  }
+
+  function loadBackups() {
+    return apiRequest("POST", "/api/admin", { op: "listBackups" }).then(function (data) {
+      adminBackups = data.backups || [];
+      adminBackupsError = "";
+    }).catch(function (err) {
+      adminBackups = [];
+      adminBackupsError = describeError(err, "Não foi possível listar os backups.");
+    }).then(paintAdmin);
+  }
+
+  function openAdmin() {
+    if (!me || me.role !== "admin") return;
+    userMenuOpen = false;
+    adminConfirm = null;
+    adminBackups = null;
+    adminBackupsError = "";
+    authMode = "admin";
+    renderAuth();
+    renderAuthModal();
+    loadBackups();
+  }
+
+  function downloadBackupFile() {
+    apiRequest("POST", "/api/admin", { op: "downloadBackup" }).then(function (data) {
+      var blob = new Blob([JSON.stringify(data.export, null, 2)], { type: "application/json" });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement("a");
+      link.href = url;
+      link.download = "agenda-obras-backup-" + dateKey(new Date()) + ".json";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+      showToast("Backup baixado.");
+    }).catch(function (err) {
+      showToast(describeError(err, "Não foi possível baixar o backup agora."));
+    });
+  }
+
+  function doAdminReset(id) {
+    apiRequest("POST", "/api/admin", { op: "resetPassword", user: id }).then(function () {
+      adminConfirm = null;
+      paintAdmin();
+      showToast("Senha de " + personById[id].name + " zerada. No próximo acesso, a pessoa define uma nova.");
+    }).catch(function (err) {
+      adminConfirm = null;
+      paintAdmin();
+      showToast(describeError(err, "Não foi possível zerar a senha agora."));
+    });
+  }
+
+  function doAdminRestore(id) {
+    apiRequest("POST", "/api/admin", { op: "restoreBackup", id: id }).then(function () {
+      adminConfirm = null;
+      return loadState().then(function (state) {
+        applyState(state);
+        render();
+        showToast("Backup restaurado.");
+        return loadBackups();
+      });
+    }).catch(function (err) {
+      adminConfirm = null;
+      paintAdmin();
+      showToast(describeError(err, "Não foi possível restaurar agora."));
     });
   }
 
@@ -1807,6 +1939,23 @@
     } else if (action === "logout") {
       userMenuOpen = false;
       doLogout();
+    } else if (action === "open-admin") {
+      openAdmin();
+    } else if (action === "admin-reset") {
+      adminConfirm = { kind: "reset", id: el.getAttribute("data-user") };
+      paintAdmin();
+    } else if (action === "admin-restore") {
+      adminConfirm = { kind: "restore", id: el.getAttribute("data-id") };
+      paintAdmin();
+    } else if (action === "admin-cancel") {
+      adminConfirm = null;
+      paintAdmin();
+    } else if (action === "admin-reset-yes") {
+      if (me && me.role === "admin") doAdminReset(el.getAttribute("data-user"));
+    } else if (action === "admin-restore-yes") {
+      if (me && me.role === "admin") doAdminRestore(el.getAttribute("data-id"));
+    } else if (action === "admin-download") {
+      if (me && me.role === "admin") downloadBackupFile();
     } else if (action === "toggle-week") {
       toggleWeek(el.getAttribute("data-person"));
     } else if (action === "set-att-period") {
