@@ -474,6 +474,32 @@
   .month-avatars img { width: 16px; height: 16px; border-radius: 50%; }
   .month-more { font-size: 10.5px; color: var(--ink-faint); font-weight: 700; }
 
+  /* ---------- account ---------- */
+  .user-menu {
+    position: absolute; right: 0; top: calc(100% + 6px); min-width: 170px; z-index: 40;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 4px; display: flex; flex-direction: column;
+  }
+  .user-menu[hidden] { display: none; }
+  .user-menu button {
+    border: none; background: none; text-align: left; padding: 8px 10px; border-radius: 8px;
+    cursor: pointer; font-weight: 700; font-size: 13px;
+  }
+  .user-menu button:hover { background: var(--surface-2); }
+  #authModal { max-width: 400px; }
+  .auth-form { display: flex; flex-direction: column; gap: 10px; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 700; color: var(--ink-soft); }
+  .field input, .field select {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 10px; color: var(--ink); font: inherit; font-size: 14px;
+  }
+  .field input:focus, .field select:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .form-error { margin: 0; min-height: 1.2em; color: var(--danger); font-size: 12.5px; font-weight: 700; }
+  .btn-link {
+    border: none; background: none; color: var(--ink-soft); cursor: pointer; font-weight: 700;
+    font-size: 12.5px; padding: 6px; align-self: center; text-decoration: underline;
+  }
+
   /* ---------- attention view ---------- */
   .att-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
   .att-note { font-size: 12.5px; color: var(--ink-soft); margin: 0 0 12px; line-height: 1.45; }
@@ -645,7 +671,7 @@
   <header class="topbar">
     <div class="brand-block">
       <h1 class="brand"><span class="brand-mark"><img src="assets/blendi-symbol.png" alt=""></span>Agenda de Obras</h1>
-      <p class="tagline">Clique num dia pra marcar sua presen&ccedil;a numa obra &mdash; todo mundo v&ecirc; a mesma agenda, atualizada ao vivo.</p>
+      <p class="tagline">Clique num dia pra ver quem vai a cada obra. Entre com o seu nome e senha pra marcar a sua presen&ccedil;a &mdash; todo mundo v&ecirc; a mesma agenda, atualizada ao vivo.</p>
     </div>
     <div class="top-actions">
       <div class="auth-area" id="authArea"></div>
@@ -708,6 +734,9 @@
 </div>
 <div class="overlay" id="waOverlay">
   <div class="modal" id="waModal" role="dialog" aria-modal="true"></div>
+</div>
+<div class="overlay" id="authOverlay">
+  <div class="modal" id="authModal" role="dialog" aria-modal="true"></div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -801,7 +830,14 @@
     if (err && (err.status === 400 || err.status === 403 || err.status === 429) && err.message) return err.message;
     return fallback;
   }
-  function onMeChanged() { render(); }
+  function onMeChanged() {
+    userMenuOpen = false;
+    if (me && me.mustChange) authMode = "change";
+    else if (!me && authMode === "change") authMode = null;
+    renderAuth();
+    renderAuthModal();
+    render();
+  }
   function onSessionLost() { me = null; onMeChanged(); }
 
   /* ---------------- date helpers ---------------- */
@@ -1246,6 +1282,134 @@
     renderModal();
   }
 
+  /* ---------------- login and account ---------------- */
+  var authMode = null;       // null | "login" | "change"
+  var userMenuOpen = false;
+  var LAST_USER_KEY = "agenda-obras-last-user";
+
+  function rememberedUser() {
+    try { return localStorage.getItem(LAST_USER_KEY) || ""; } catch (e) { return ""; }
+  }
+  function rememberUser(id) {
+    try { localStorage.setItem(LAST_USER_KEY, id); } catch (e) { /* ignora */ }
+  }
+  function isLocalHost(hostname) {
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname === "::1";
+  }
+
+  function renderAuth() {
+    var area = document.getElementById("authArea");
+    if (!me) {
+      area.innerHTML = '<button class="today-btn" data-action="open-login">Entrar</button>';
+      return;
+    }
+    area.innerHTML = '<button class="today-btn" id="userBtn" data-action="toggle-user-menu" aria-haspopup="true" aria-expanded="' + userMenuOpen + '">' +
+      h(me.name) + ' &#9662;</button>' +
+      '<div class="user-menu" id="userMenu"' + (userMenuOpen ? "" : " hidden") + ">" +
+      '<button data-action="open-change">Trocar senha</button>' +
+      '<button data-action="logout">Sair</button></div>';
+  }
+
+  function loginHTML() {
+    var last = rememberedUser();
+    return '<div class="modal-head"><div><h2>Entrar</h2></div><button class="close-x" data-action="close-auth" aria-label="Fechar">&times;</button></div>' +
+      '<p class="modal-sub">Escolha o seu nome e digite a senha.</p>' +
+      '<form id="loginForm" class="auth-form">' +
+      '<label class="field"><span>Nome</span><select name="user">' + TEAM.map(function (p) {
+        return '<option value="' + p.id + '"' + (p.id === last ? " selected" : "") + ">" + h(p.name) + "</option>";
+      }).join("") + "</select></label>" +
+      '<label class="field"><span>Senha</span><input type="password" name="password" autocomplete="current-password" required></label>' +
+      '<p class="form-error" id="authError" role="alert"></p>' +
+      '<button type="submit" class="btn btn-primary" id="authSubmit">Entrar</button></form>';
+  }
+
+  function changeHTML() {
+    var forced = !!(me && me.mustChange);
+    return '<div class="modal-head"><div><h2>' + (forced ? "Defina a sua senha" : "Trocar senha") + "</h2></div>" +
+      (forced ? "" : '<button class="close-x" data-action="close-auth" aria-label="Fechar">&times;</button>') + "</div>" +
+      '<p class="modal-sub">' + (forced ? "Este é o seu primeiro acesso (ou a senha foi zerada). Escolha uma senha nova para continuar. " : "Digite a senha atual e a nova. ") +
+      "Mínimo de 8 caracteres, diferente da senha inicial.</p>" +
+      '<form id="changeForm" class="auth-form">' +
+      '<label class="field"><span>Senha atual</span><input type="password" name="current" autocomplete="current-password" required></label>' +
+      '<label class="field"><span>Nova senha</span><input type="password" name="next" autocomplete="new-password" required></label>' +
+      '<label class="field"><span>Repita a nova senha</span><input type="password" name="confirm" autocomplete="new-password" required></label>' +
+      '<p class="form-error" id="authError" role="alert"></p>' +
+      '<button type="submit" class="btn btn-primary" id="authSubmit">Salvar senha</button>' +
+      (forced ? '<button type="button" class="btn-link" data-action="logout">Sair</button>' : "") + "</form>";
+  }
+
+  function renderAuthModal() {
+    var overlay = document.getElementById("authOverlay");
+    var modal = document.getElementById("authModal");
+    if (!authMode) { overlay.classList.remove("show"); modal.innerHTML = ""; return; }
+    var wanted = authMode === "login" ? "loginForm" : "changeForm";
+    if (!modal.querySelector("#" + wanted)) {
+      modal.innerHTML = authMode === "login" ? loginHTML() : changeHTML();
+      var first = modal.querySelector("select, input");
+      if (first) first.focus();
+    }
+    overlay.classList.add("show");
+  }
+
+  function closeAuth() {
+    if (authMode === "change" && me && me.mustChange) return; // a troca obrigatória não se dispensa
+    authMode = null;
+    renderAuthModal();
+  }
+
+  function setAuthError(msg) {
+    var el = document.getElementById("authError");
+    if (el) el.textContent = msg || "";
+  }
+  function authFailureText(err) {
+    return err && err.status ? err.message : "Não foi possível agora. Tente de novo.";
+  }
+
+  function doLogin(form) {
+    var btn = document.getElementById("authSubmit");
+    btn.disabled = true;
+    setAuthError("");
+    apiRequest("POST", "/api/auth", { op: "login", user: form.elements.user.value, password: form.elements.password.value }).then(function (data) {
+      me = data.user;
+      rememberUser(me.id);
+      authMode = me.mustChange ? "change" : null;
+      onMeChanged();
+      if (!me.mustChange) showToast("Olá, " + me.name + ".");
+    }).catch(function (err) {
+      btn.disabled = false;
+      setAuthError(authFailureText(err));
+      form.elements.password.value = "";
+      form.elements.password.focus();
+    });
+  }
+
+  function doChangePassword(form) {
+    var current = form.elements.current.value, next = form.elements.next.value, again = form.elements.confirm.value;
+    if (next.length < 8) { setAuthError("A nova senha precisa ter pelo menos 8 caracteres."); return; }
+    if (next !== again) { setAuthError("A confirmação não confere com a nova senha."); return; }
+    var btn = document.getElementById("authSubmit");
+    btn.disabled = true;
+    setAuthError("");
+    apiRequest("POST", "/api/auth", { op: "changePassword", current: current, next: next }).then(function (data) {
+      me = data.user;
+      authMode = null;
+      onMeChanged();
+      showToast("Senha alterada.");
+    }).catch(function (err) {
+      btn.disabled = false;
+      setAuthError(authFailureText(err));
+    });
+  }
+
+  function doLogout() {
+    apiRequest("POST", "/api/auth", { op: "logout" }).catch(function () { /* cookie expira sozinho */ }).then(function () {
+      me = null;
+      authMode = null;
+      onMeChanged();
+      showToast("Você saiu.");
+    });
+  }
+
   /* ---------------- toast ---------------- */
   var toastTimer = null;
   function showToast(msg) {
@@ -1390,8 +1554,10 @@
 
   /* ---------------- events ---------------- */
   document.addEventListener("click", function (ev) {
+    if (userMenuOpen && !ev.target.closest(".auth-area")) { userMenuOpen = false; renderAuth(); }
     var el = ev.target.closest("[data-action]");
     if (!el) {
+      if (ev.target.id === "authOverlay") closeAuth();
       if (ev.target.id === "overlay") { modalDateKey = null; renderModal(); }
       if (ev.target.id === "waOverlay") { waModalOpen = false; renderWaModal(); }
       return;
@@ -1412,6 +1578,22 @@
     } else if (action === "set-view") {
       view = el.getAttribute("data-view");
       renderCalendar();
+    } else if (action === "open-login") {
+      authMode = "login";
+      renderAuthModal();
+    } else if (action === "toggle-user-menu") {
+      userMenuOpen = !userMenuOpen;
+      renderAuth();
+    } else if (action === "open-change") {
+      userMenuOpen = false;
+      authMode = "change";
+      renderAuth();
+      renderAuthModal();
+    } else if (action === "close-auth") {
+      closeAuth();
+    } else if (action === "logout") {
+      userMenuOpen = false;
+      doLogout();
     } else if (action === "set-att-period") {
       attentionPeriod = el.getAttribute("data-period");
       renderCalendar();
@@ -1508,7 +1690,12 @@
       }
     });
   });
+  document.addEventListener("submit", function (ev) {
+    if (ev.target.id === "loginForm") { ev.preventDefault(); doLogin(ev.target); }
+    else if (ev.target.id === "changeForm") { ev.preventDefault(); doChangePassword(ev.target); }
+  });
   document.addEventListener("keydown", function (ev) {
+    if (ev.key === "Escape" && authMode) { closeAuth(); return; }
     if (ev.key === "Escape" && modalDateKey) { modalDateKey = null; renderModal(); }
     if (ev.key === "Escape" && waModalOpen) { waModalOpen = false; renderWaModal(); }
   });
@@ -1516,6 +1703,8 @@
   /* ---------------- init ---------------- */
   applyTheme();
   renderLegend();
+  renderAuth();
+  document.getElementById("localBanner").hidden = !isLocalHost(location.hostname);
   render();
   loadState().then(function (state) {
     applyState(state);

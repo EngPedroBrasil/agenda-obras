@@ -105,3 +105,99 @@ test("the header keeps its place and the label reads Atenção por obra", async 
   await expect(page.locator("#arrowsBox")).toHaveCSS("visibility", "hidden");
   await expect(page.locator("#waBtn")).toHaveCSS("visibility", "hidden");
 });
+
+// ---- Tarefa 22: login, conta, troca obrigatória, ambiente local ------------------------------
+
+async function loginAs(page, user, password) {
+  await page.locator('[data-action="open-login"]').click();
+  await page.locator('#loginForm select[name="user"]').selectOption(user);
+  await page.locator('#loginForm input[name="password"]').fill(password);
+  await page.locator('#loginForm button[type="submit"]').click();
+}
+
+test("logged-out visitors see Entrar and no user menu", async ({ page }) => {
+  await openApp(page);
+  await expect(page.locator('[data-action="open-login"]')).toBeVisible();
+  await expect(page.locator("#userBtn")).toHaveCount(0);
+});
+
+test("a wrong password shows the generic error and keeps the visitor logged out", async ({ page }) => {
+  await openApp(page);
+  await loginAs(page, "jean", "errada");
+  await expect(page.locator("#authError")).toHaveText("usuário ou senha inválidos");
+  await expect(page.locator("#loginForm")).toBeVisible();
+});
+
+test("a correct login shows the name; the menu offers Trocar senha and Sair", async ({ page }) => {
+  await openApp(page, { passwords: {} });
+  await loginAs(page, "jean", "Mudar@123");
+  await expect(page.locator("#userBtn")).toContainText("Jean");
+  await expect(page.locator("#authModal #loginForm")).toHaveCount(0);
+  await page.locator("#userBtn").click();
+  await expect(page.locator('#userMenu [data-action="open-change"]')).toBeVisible();
+  await expect(page.locator('#userMenu [data-action="logout"]')).toBeVisible();
+});
+
+test("an existing session is recognised on load", async ({ page }) => {
+  await openApp(page, { me: "jean" });
+  await expect(page.locator("#userBtn")).toContainText("Jean");
+});
+
+test("first access forces a new password; the modal cannot be dismissed", async ({ page }) => {
+  const state = await openApp(page, { mustChange: ["jean"] });
+  await loginAs(page, "jean", "Mudar@123");
+  await expect(page.locator("#authModal h2")).toHaveText("Defina a sua senha");
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#changeForm")).toBeVisible();
+  await expect(page.locator('#authModal [data-action="close-auth"]')).toHaveCount(0);
+
+  await page.locator('#changeForm input[name="current"]').fill("Mudar@123");
+  await page.locator('#changeForm input[name="next"]').fill("curta");
+  await page.locator('#changeForm input[name="confirm"]').fill("curta");
+  await page.locator('#changeForm button[type="submit"]').click();
+  await expect(page.locator("#authError")).toContainText("pelo menos 8");
+
+  await page.locator('#changeForm input[name="next"]').fill("NovaSenha1");
+  await page.locator('#changeForm input[name="confirm"]').fill("Outra1234");
+  await page.locator('#changeForm button[type="submit"]').click();
+  await expect(page.locator("#authError")).toContainText("não confere");
+
+  await page.locator('#changeForm input[name="confirm"]').fill("NovaSenha1");
+  await page.locator('#changeForm button[type="submit"]').click();
+  await expect(page.locator("#changeForm")).toHaveCount(0);
+  await expect(page.locator("#userBtn")).toContainText("Jean");
+  expect(state.passwords.jean).toBe("NovaSenha1");
+});
+
+test("a voluntary password change can be cancelled and reports a wrong current password", async ({ page }) => {
+  await openApp(page, { me: "jean" });
+  await page.locator("#userBtn").click();
+  await page.locator('#userMenu [data-action="open-change"]').click();
+  await expect(page.locator("#authModal h2")).toHaveText("Trocar senha");
+  await page.locator('#changeForm input[name="current"]').fill("errada");
+  await page.locator('#changeForm input[name="next"]').fill("NovaSenha1");
+  await page.locator('#changeForm input[name="confirm"]').fill("NovaSenha1");
+  await page.locator('#changeForm button[type="submit"]').click();
+  await expect(page.locator("#authError")).toHaveText("senha atual incorreta");
+  await page.locator('#authModal [data-action="close-auth"]').click();
+  await expect(page.locator("#changeForm")).toHaveCount(0);
+});
+
+test("Sair returns to the logged-out state", async ({ page }) => {
+  const state = await openApp(page, { me: "jean" });
+  await page.locator("#userBtn").click();
+  await page.locator('#userMenu [data-action="logout"]').click();
+  await expect(page.locator('[data-action="open-login"]')).toBeVisible();
+  expect(state.me).toBe(null);
+});
+
+test("the local-test banner shows on localhost and not elsewhere", async ({ page }) => {
+  await openApp(page, { local: true });
+  await expect(page.locator("#localBanner")).toBeVisible();
+  await expect(page.locator("#localBanner")).toContainText("AMBIENTE LOCAL DE TESTE");
+});
+
+test("the local-test banner is hidden when the page is not local", async ({ page }) => {
+  await openApp(page);
+  await expect(page.locator("#localBanner")).toBeHidden();
+});
