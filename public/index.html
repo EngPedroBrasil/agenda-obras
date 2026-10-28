@@ -676,6 +676,7 @@
 <script src="lib/grouping.js"></script>
 <script src="lib/week-model.js"></script>
 <script src="lib/week-image.js"></script>
+<script src="lib/week-message.js"></script>
 <script>
 (function () {
   "use strict";
@@ -1184,46 +1185,13 @@
   }
 
   function buildWeeklyWhatsAppMessage() {
-    var start = startOfWeek(cursor);
-    var sectorOrder = [];
-    var sectors = {};
-    TEAM.forEach(function (p) {
-      if (!sectors[p.role]) { sectors[p.role] = { peopleOrder: [], people: {} }; sectorOrder.push(p.role); }
+    return WeekMessage.buildWeekMessage({
+      weekStart: startOfWeek(cursor),
+      entries: entries,
+      team: TEAM,
+      obraById: obraById,
+      rangeLabel: weekRangeLabel()
     });
-    for (var i = 0; i < 7; i++) {
-      var d = addDays(start, i);
-      var dayLabel = WEEKDAY_FULL[d.getDay()] + " (" + pad(d.getDate()) + ")";
-      entriesForDate(dateKey(d)).forEach(function (en) {
-        var person = personById[en.person], obra = obraById[en.obra];
-        if (!person || !obra) return;
-        var sector = sectors[person.role];
-        if (!sector.people[person.id]) {
-          sector.people[person.id] = { name: person.name, dayOrder: [], days: {} };
-          sector.peopleOrder.push(person.id);
-        }
-        var pdata = sector.people[person.id];
-        if (!pdata.days[dayLabel]) { pdata.days[dayLabel] = []; pdata.dayOrder.push(dayLabel); }
-        pdata.days[dayLabel].push((obra.shortName || obra.name) + (en.comment ? " (" + en.comment + ")" : ""));
-      });
-    }
-    var lines = ["📅 *Agenda de Obras — semana de " + weekRangeLabel() + "*", ""];
-    var anyEntry = false;
-    sectorOrder.forEach(function (role) {
-      var sector = sectors[role];
-      if (!sector.peopleOrder.length) return;
-      anyEntry = true;
-      lines.push("*" + role + "*");
-      sector.peopleOrder.forEach(function (pid) {
-        var pdata = sector.people[pid];
-        lines.push(pdata.name);
-        pdata.dayOrder.forEach(function (dayLabel) {
-          lines.push(dayLabel + " " + pdata.days[dayLabel].join(" e "));
-        });
-      });
-      lines.push("");
-    });
-    if (!anyEntry) lines.push("Ninguém marcado nessa semana.");
-    return lines.join("\n").trim();
   }
 
   /* ---- weekly image (canvas), shown in the message modal ---- */
