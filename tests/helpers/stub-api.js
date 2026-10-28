@@ -215,7 +215,7 @@ async function openApp(page, opts) {
   const loaded = page.waitForResponse(function (r) { return r.url().indexOf("/api/entries") >= 0 && r.request().method() === "GET"; });
   await page.goto(url);
   await loaded;
-  await page.waitForSelector("#calendarArea .day-card, #calendarArea .month-cell, #calendarArea .att-table");
+  await page.waitForSelector("#calendarArea .day-card, #calendarArea .month-cell, #calendarArea .att-table", { state: "attached" });
   return state;
 }
 

@@ -187,6 +187,8 @@ test("Sair returns to the logged-out state", async ({ page }) => {
   const state = await openApp(page, { me: "jean" });
   await page.locator("#userBtn").click();
   await page.locator('#userMenu [data-action="logout"]').click();
+  await expect(page.locator("#landingOverlay")).toHaveClass(/show/);
+  await page.locator('[data-action="landing-visitor"]').click();
   await expect(page.locator('[data-action="open-login"]')).toBeVisible();
   expect(state.me).toBe(null);
 });
@@ -415,7 +417,8 @@ test("the strip shows who already closed the week, with the closing time", async
   await expect(jean).toHaveAttribute("title", "Fechada em 27/10 às 12:00");
   const haniel = page.locator('.wk-btn[data-person="haniel"]');
   await expect(haniel).not.toHaveClass(/done/);
-  await expect(haniel).toContainText("?");
+  await expect(haniel).toContainText("✗");
+  await expect(page.locator(".wk-label")).toHaveText("Semana programada?");
 });
 
 test("the strip only exists in the week view", async ({ page }) => {
@@ -602,6 +605,8 @@ test("the initial menu offers sign in or visitor access", async ({ page }) => {
   await expect(page.locator("#landingOverlay")).toHaveClass(/show/);
   await expect(page.locator('[data-action="landing-login"]')).toBeVisible();
   await expect(page.locator('[data-action="landing-visitor"]')).toBeVisible();
+  await expect(page.locator(".landing-logo")).toBeVisible();
+  await expect(page.locator(".wrap")).toBeHidden(); // calendário só aparece depois do clique
 });
 
 test("choosing visitor closes the menu and is remembered on this device", async ({ page }) => {

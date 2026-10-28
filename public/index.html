@@ -431,9 +431,16 @@
     flex: 1 1 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
     padding: 6px 8px; color: var(--ink); font: inherit; font-size: 13px;
   }
-  .landing { text-align: center; }
-  .landing h2 { margin: 0 0 2px; }
-  .landing .btn { display: block; width: 100%; margin-top: 10px; }
+  #landingOverlay { background: var(--bg); z-index: 60; padding: 24px; }
+  body.landing-open .wrap, body.booting .wrap { display: none; }
+  .landing { text-align: center; width: 100%; max-width: 340px; }
+  .landing-logo { width: 92px; height: 92px; padding: 16px; margin: 0 auto 22px; display: block; object-fit: contain; background: #fff; border-radius: 28px; box-shadow: var(--shadow); box-sizing: content-box; }
+  .landing h2 { margin: 0 0 4px; font-size: 28px; letter-spacing: -0.01em; color: var(--ink); }
+  .landing .landing-sub { margin: 0 0 30px; font-size: 14px; color: var(--ink-faint); letter-spacing: 0.04em; }
+  .landing .btn { display: block; width: 100%; margin-top: 12px; padding: 13px 16px; font-size: 15px; }
+  .landing .btn-ghost { background: transparent; color: var(--ink); border: 1.5px solid var(--border); }
+  .landing .btn-ghost:hover { border-color: var(--accent); }
+  .landing .landing-hint { margin: 18px 0 0; font-size: 12.5px; color: var(--ink-faint); }
   .meet-times[hidden] { display: none; }
   .meet-times input[type="time"] {
     background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
@@ -460,6 +467,7 @@
     border: 1.5px solid var(--border); background: var(--surface); color: var(--ink-soft); border-radius: 999px;
     padding: 5px 11px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer;
   }
+  .wk-btn:not(.done) { border-color: var(--danger); background: rgba(192, 57, 43, 0.12); color: var(--danger); }
   .wk-btn.done { border-color: #2e9e5b; background: rgba(46, 158, 91, 0.14); color: var(--ink); }
   .wk-count { margin-left: auto; font-size: 12.5px; color: var(--ink-faint); }
   .wa-banner { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; font-weight: 700; }
@@ -791,7 +799,7 @@
   <div class="modal" id="authModal" role="dialog" aria-modal="true"></div>
 </div>
 <div class="overlay" id="landingOverlay">
-  <div class="modal" id="landingModal" role="dialog" aria-modal="true"></div>
+  <div class="landing" id="landingModal" role="dialog" aria-modal="true" aria-label="Agenda de Obras"></div>
 </div>
 <div class="toast" id="toast"></div>
 
@@ -1494,15 +1502,18 @@
   function renderLanding() {
     var overlay = document.getElementById("landingOverlay");
     var box = document.getElementById("landingModal");
+    document.body.classList.toggle("landing-open", !!landingOpen);
     if (!landingOpen) { overlay.classList.remove("show"); box.innerHTML = ""; return; }
-    box.innerHTML = '<div class="landing"><h2>Agenda de Obras</h2><p class="modal-sub">Blendi Engenharia</p>' +
+    box.innerHTML = '<img class="landing-logo" src="assets/blendi-symbol.png" alt="Blendi">' +
+      '<h2>Agenda de Obras</h2><p class="landing-sub">Blendi Engenharia</p>' +
       '<button type="button" class="btn btn-primary" data-action="landing-login">Entrar</button>' +
-      '<button type="button" class="btn" data-action="landing-visitor">Entrar como visitante</button>' +
-      '<p class="modal-sub">Visitantes veem a agenda, mas não alteram nada.</p></div>';
+      '<button type="button" class="btn btn-ghost" data-action="landing-visitor">Entrar como visitante</button>' +
+      '<p class="landing-hint">Visitantes veem a agenda, mas n\u00e3o alteram nada.</p>';
     overlay.classList.add("show");
   }
   function maybeShowLanding() {
     landingOpen = !me && !visitorChosen() && !authMode;
+    document.body.classList.remove("booting");
     renderLanding();
   }
 
@@ -1874,7 +1885,7 @@
       var at = conf[p.id];
       if (at) done++;
       return '<button type="button" class="wk-btn' + (at ? " done" : "") + '" data-action="toggle-week" data-person="' + p.id + '" aria-pressed="' + !!at + '" ' +
-        'title="' + (at ? "Fechada em " + formatClosedAt(at) : "Clique para confirmar que a semana está programada") + '">' + (at ? "&#10003; " : "? ") + h(p.name) + "</button>";
+        'title="' + (at ? "Fechada em " + formatClosedAt(at) : "Clique para confirmar que a semana está programada") + '">' + (at ? "&#10003; " : "&#10007; ") + h(p.name) + "</button>";
     }).join("");
     return '<div class="week-strip"><span class="wk-label">Semana programada?</span>' + buttons +
       '<span class="wk-count">' + done + " de " + TEAM.length + " programadas</span></div>";
@@ -2137,6 +2148,7 @@
   renderLegend();
   renderAuth();
   document.getElementById("localBanner").hidden = !isLocalHost(location.hostname);
+  if (!visitorChosen()) document.body.classList.add("booting"); // evita piscar o calend\u00e1rio antes da tela inicial
   render();
   loadState().then(function (state) {
     applyState(state);
