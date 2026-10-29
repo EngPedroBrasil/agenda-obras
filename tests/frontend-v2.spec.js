@@ -476,18 +476,27 @@ test("a visitor sees a message instead of the week while it is not released", as
   await openApp(page, { entries: VIS, confirmations: { [WEEK]: { jean: CLOSED_AT } } });
   await expect(page.locator(".visitor-lock")).toContainText("ainda não foi liberada");
   await expect(page.locator(".day-card")).toHaveCount(0);
-  await expect(page.locator('[data-action="prev"]')).toBeDisabled();
-  await expect(page.locator('[data-action="next"]')).toBeDisabled();
+  await expect(page.locator(".visitor-lock")).toContainText("A equipe ainda está planejando esta semana");
+  await expect(page.locator('[data-action="prev"]')).toBeEnabled();
+  await expect(page.locator('[data-action="next"]')).toBeEnabled();
 });
 
-test("visitor arrows jump only between released weeks", async ({ page }) => {
+test("visitor arrows go week by week: released weeks show, the others show the not-released message", async ({ page }) => {
   // semanas liberadas: 25/10 e 8/11; 1/11 está incompleta
   await openApp(page, { entries: VIS, confirmations: { [WEEK]: ALL5, "2026-11-01": { jean: CLOSED_AT }, "2026-11-08": ALL5 } });
-  await expect(page.locator('[data-action="prev"]')).toBeDisabled();
+  await expect(page.locator("#periodLabel")).toHaveText("25–31 de outubro de 2026");
+  await expect(page.locator(".day-card").first()).toBeVisible();
+  await page.locator('[data-action="next"]').click();
+  await expect(page.locator("#periodLabel")).toHaveText("1–7 de novembro de 2026");
+  await expect(page.locator(".visitor-lock")).toContainText("ainda não foi liberada");
+  await expect(page.locator(".day-card")).toHaveCount(0);
   await page.locator('[data-action="next"]').click();
   await expect(page.locator("#periodLabel")).toHaveText("8–14 de novembro de 2026");
   await expect(page.locator(".day-card").first()).toBeVisible();
-  await expect(page.locator('[data-action="next"]')).toBeDisabled();
+  await page.locator('[data-action="next"]').click();
+  await expect(page.locator(".visitor-lock")).toBeVisible();
+  await page.locator('[data-action="prev"]').click();
+  await page.locator('[data-action="prev"]').click();
   await page.locator('[data-action="prev"]').click();
   await expect(page.locator("#periodLabel")).toHaveText("25–31 de outubro de 2026");
   await page.locator('[data-action="next"]').click();

@@ -1260,9 +1260,8 @@
   }
   function isReleasedWeek(key) { return releasedKeys().indexOf(key) >= 0; }
   function visitorLockHTML() {
-    var hasAny = releasedKeys().length > 0;
     return '<div class="visitor-lock"><strong>Esta semana ainda n\u00e3o foi liberada</strong>' +
-      "<span>" + (hasAny ? "Use as setas para ver as semanas j\u00e1 liberadas pela equipe." : "Assim que a equipe liberar a programa\u00e7\u00e3o, ela aparece aqui.") + "</span></div>";
+      "<span>A equipe ainda est\u00e1 planejando esta semana. Quando ela for liberada, a programa\u00e7\u00e3o aparece aqui.</span></div>";
   }
 
   function renderWeek() {
@@ -1379,22 +1378,9 @@
     return bar + note + '<div class="att-scroll"><table class="att-table"><thead>' + head + "</thead><tbody>" + body + sum + "</tbody></table></div>";
   }
 
-  function visitorStep(dir) {
-    var cur = weekKeyOfCursor();
-    var keys = releasedKeys();
-    var found = null;
-    if (dir < 0) { keys.forEach(function (k) { if (k < cur) found = k; }); }
-    else { found = keys.filter(function (k) { return k > cur; })[0] || null; }
-    return found;
-  }
-
   function renderCalendar() {
     document.body.classList.toggle("visitor", !me);
     if (!me && view !== "week") view = "week";
-    var arrowPrev = document.querySelector('#arrowsBox [data-action="prev"]');
-    var arrowNext = document.querySelector('#arrowsBox [data-action="next"]');
-    arrowPrev.disabled = !me && !visitorStep(-1);
-    arrowNext.disabled = !me && !visitorStep(1);
     document.getElementById("periodLabel").textContent = periodLabel();
     document.getElementById("calendarArea").innerHTML = view === "week" ? renderWeek() : view === "month" ? renderMonth() : renderAttention();
     document.getElementById("viewSeg").querySelectorAll("button").forEach(function (b) {
@@ -2257,12 +2243,6 @@
     var action = el.getAttribute("data-action");
     if (action === "prev" || action === "next") {
       var dir = action === "prev" ? -1 : 1;
-      if (!me) {
-        var target = visitorStep(dir);
-        if (target) cursor = parseKey(target);
-        renderCalendar();
-        return;
-      }
       cursor = view === "week" ? addDays(cursor, 7 * dir) : new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1);
       renderCalendar();
     } else if (action === "today") {
